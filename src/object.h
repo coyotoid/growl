@@ -11,7 +11,14 @@
 #define ORD(x) ((O)(x) >> 1)
 
 enum {
-  TYPE_FWD,
+  OBJ_FWD = 2,
+  OBJ_QUOT,
+};
+
+enum {
+  TYPE_NIL = 0,
+  TYPE_NUM = 1,
+  TYPE_FWD = OBJ_FWD,
 };
 
 typedef uintptr_t O;
@@ -20,5 +27,7 @@ typedef uintptr_t O;
 typedef struct Hd {
   U32 size, type;
 } Hd;
+
+I type(O);
 
 #endif

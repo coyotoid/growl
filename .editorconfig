@@ -1,7 +1,13 @@
 root = true
+
 [*]
 end_of_line = lf
 insert_final_newline = true
+
 [*.{c,h,grr}]
+indent_style = space
+indent_size = 2
+
+[meson.build]
 indent_style = space
 indent_size = 2

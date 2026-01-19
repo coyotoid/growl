@@ -9,8 +9,12 @@
 
 enum {
   OP_NOP = 0,
+  OP_CONST,       // Push constant to stack
+  OP_JUMP,        // Relative jump
+  OP_JUMP_IF_NIL, // Relative jump if top-of-stack is nil
+  OP_DOWORD,
+  OP_CALL,
   OP_RETURN,
-  OP_CONST,
 };
 
 #define STACK_SIZE 256

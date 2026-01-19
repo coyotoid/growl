@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "chunk.h"
 #include "gc.h"
+#include "object.h"
 #include "vendor/yar.h"
 
 #define ALIGN(n) (((n) + 7) & ~7)
@@ -18,14 +20,14 @@ V gc_reset(Gc *gc, I mark) { gc->roots.count = mark; }
 
 static O copy(Gc *gc, Hd *hdr) {
   assert(infrom(gc, hdr));
-  assert(hdr->type != TYPE_FWD);
+  assert(hdr->type != OBJ_FWD);
 
   Z sz = ALIGN(hdr->size);
   Hd *new = (Hd *)gc->to.free;
   gc->to.free += sz;
   memcpy(new, hdr, sz);
 
-  hdr->type = TYPE_FWD;
+  hdr->type = OBJ_FWD;
   O *obj = (O *)(hdr + 1);
   *obj = BOX(new);
   return *obj;
@@ -40,7 +42,7 @@ static O forward(Gc *gc, O obj) {
     return obj;
 
   Hd *hdr = UNBOX(obj);
-  if (hdr->type == TYPE_FWD) {
+  if (hdr->type == OBJ_FWD) {
     O *o = (O *)(hdr + 1);
     return *o;
   } else {
@@ -76,7 +78,13 @@ V gc_collect(Gc *gc) {
     Hd *hdr = (Hd *)scan;
     switch (hdr->type) {
       // TODO: the rest of the owl
-    case TYPE_FWD:
+    case OBJ_QUOT: {
+      Bc *chunk = (Bc *)(hdr + 1);
+      for (Z i = 0; i < chunk->constants.count; i++)
+        chunk->constants.items[i] = forward(gc, chunk->constants.items[i]);
+      break;
+    }
+    case OBJ_FWD:
       fprintf(stderr, "fatal GC error: forwarding pointer in to-space\n");
       abort();
     default:

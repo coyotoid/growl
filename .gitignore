@@ -1,5 +1,4 @@
-*.o
-.cache
-/growl
+/.cache
+/build
 /.envrc
 /compile_commands.json

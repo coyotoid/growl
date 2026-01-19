@@ -1,5 +1,7 @@
 #include "vm.h"
 #include "gc.h"
+#include "print.h"
+#include <stdio.h>
 
 static I decode_sleb128(U8 **ptr) {
   I result = 0;
@@ -45,16 +47,23 @@ V vm_run(Vm *vm, Bc *chunk, I offset) {
     U8 opcode;
     switch (opcode = *vm->ip++) {
     case OP_NOP:
-      break;
-    case OP_RETURN:
-      return;
+      continue;
     case OP_CONST: {
       I idx = decode_sleb128(&vm->ip);
       vm_push(vm, chunk->constants.items[idx]);
       break;
     }
+    case OP_RETURN:
+      goto done;
     }
   }
 
+done:
   gc_reset(&vm->gc, mark);
+  // print stack :3
+  for (O *i = vm->stack; i < vm->sp; i++) {
+    print(*i);
+    putchar(' ');
+  }
+  putchar('\n');
 }
