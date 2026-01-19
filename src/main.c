@@ -4,73 +4,59 @@
 #include "common.h"
 
 #include "chunk.h"
-#include "gc.h"
+#include "compile.h"
+#include "debug.h"
 #include "parser.h"
-#include "vendor/mpc.h"
 #include "vm.h"
 
-void dump(const V *data, Z size) {
-  char ascii[17];
-  Z i, j;
-  ascii[16] = '\0';
-  for (i = 0; i < size; ++i) {
-    printf("%02X ", ((unsigned char *)data)[i]);
-    if (((unsigned char *)data)[i] >= ' ' &&
-        ((unsigned char *)data)[i] <= '~') {
-      ascii[i % 16] = ((unsigned char *)data)[i];
-    } else {
-      ascii[i % 16] = '.';
-    }
-    if ((i + 1) % 8 == 0 || i + 1 == size) {
-      printf(" ");
-      if ((i + 1) % 16 == 0) {
-        printf("|  %s \n", ascii);
-      } else if (i + 1 == size) {
-        ascii[(i + 1) % 16] = '\0';
-        if ((i + 1) % 16 <= 8) {
-          printf(" ");
-        }
-        for (j = (i + 1) % 16; j < 16; ++j) {
-          printf("   ");
-        }
-        printf("|  %s \n", ascii);
-      }
-    }
-  }
-}
+#include "vendor/mpc.h"
 
 I repl(void) {
-  Bc chunk = {0};
   Vm vm = {0};
-
   vm_init(&vm);
 
-  I idx = chunk_add_constant(&chunk, NUM(10));
-  chunk_emit_byte(&chunk, OP_CONST);
-  chunk_emit_sleb128(&chunk, idx);
-  chunk_emit_byte(&chunk, OP_RETURN);
+  Bc *chunk = chunk_new();
 
-  vm_run(&vm, &chunk, 0);
+  I idx = chunk_add_constant(chunk, NUM(10));
+  chunk_emit_byte(chunk, OP_CONST);
+  chunk_emit_sleb128(chunk, idx);
+  chunk_emit_byte(chunk, OP_CONST);
+  chunk_emit_sleb128(chunk, idx);
+  chunk_emit_byte(chunk, OP_ADD);
+  chunk_emit_byte(chunk, OP_RETURN);
 
-  return 0;
+  disassemble(chunk, "test chunk");
+  I res = vm_run(&vm, chunk, 0);
+
+  chunk_release(chunk);
+  vm_deinit(&vm);
+  return !res;
 }
 
 I loadfile(const char *fname) {
-  Gc gc = {0};
-  gc_init(&gc);
+  Vm vm = {0};
+  vm_init(&vm);
 
   mpc_result_t res;
   if (!mpc_parse_contents(fname, Program, &res)) {
     mpc_err_print_to(res.error, stderr);
     mpc_err_delete(res.error);
-    gc_deinit(&gc);
     return 1;
   }
 
-  mpc_ast_print(res.output);
+  Bc *chunk = compile_program(&vm.gc, res.output);
   mpc_ast_delete(res.output);
-  gc_deinit(&gc);
-  return 0;
+
+  if (chunk != NULL) {
+    disassemble(chunk, fname);
+    I res = vm_run(&vm, chunk, 0);
+    chunk_release(chunk);
+    vm_deinit(&vm);
+    return !res;
+  } else {
+    vm_deinit(&vm);
+    return 1;
+  }
 }
 
 int main(int argc, const char *argv[]) {

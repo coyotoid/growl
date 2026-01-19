@@ -19,6 +19,7 @@ enum {
   TYPE_NIL = 0,
   TYPE_NUM = 1,
   TYPE_FWD = OBJ_FWD,
+  TYPE_QUOT = OBJ_QUOT,
 };
 
 typedef uintptr_t O;

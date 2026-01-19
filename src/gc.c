@@ -79,7 +79,8 @@ V gc_collect(Gc *gc) {
     switch (hdr->type) {
       // TODO: the rest of the owl
     case OBJ_QUOT: {
-      Bc *chunk = (Bc *)(hdr + 1);
+      Bc **chunk_ptr = (Bc **)(hdr + 1);
+      Bc *chunk = *chunk_ptr;
       for (Z i = 0; i < chunk->constants.count; i++)
         chunk->constants.items[i] = forward(gc, chunk->constants.items[i]);
       break;
@@ -89,6 +90,23 @@ V gc_collect(Gc *gc) {
       abort();
     default:
       fprintf(stderr, "GC warning: junk object type %" PRId32 "\n", hdr->type);
+    }
+    scan += ALIGN(hdr->size);
+  }
+
+  scan = gc->from.start;
+  while (scan < gc->from.free) {
+    Hd *hdr = (Hd *)scan;
+    if (hdr->type != OBJ_FWD) {
+      switch (hdr->type) {
+      case OBJ_QUOT: {
+        Bc **chunk_ptr = (Bc **)(hdr + 1);
+        chunk_release(*chunk_ptr);
+        break;
+      }
+      default:
+        break;
+      }
     }
     scan += ALIGN(hdr->size);
   }
@@ -103,7 +121,22 @@ V gc_collect(Gc *gc) {
 #endif
 }
 
-void gc_init(Gc *gc) {
+Hd *gc_alloc(Gc *gc, Z sz) {
+  sz = ALIGN(sz);
+  if (gc->from.free + sz > gc->from.end) {
+    gc_collect(gc);
+    if (gc->from.free + sz > gc->from.end) {
+      fprintf(stderr, "out of memory (requested %" PRIdPTR "bytes\n", sz);
+      abort();
+    }
+  }
+  Hd *hdr = (Hd *)gc->from.free;
+  gc->from.free += sz;
+  hdr->size = sz;
+  return hdr;
+}
+
+V gc_init(Gc *gc) {
   gc->from.start = malloc(HEAP_BYTES);
   if (!gc->from.start)
     goto fatal;
@@ -126,7 +159,7 @@ fatal:
   abort();
 }
 
-void gc_deinit(Gc *gc) {
+V gc_deinit(Gc *gc) {
   gc_collect(gc);
   free(gc->from.start);
   free(gc->to.start);

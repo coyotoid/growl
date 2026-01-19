@@ -7,9 +7,10 @@ project(
 )
 
 sources = [
+'src/gc.c',
   'src/chunk.c',
   'src/compile.c',
-  'src/gc.c',
+  'src/debug.c',
   'src/object.c',
   'src/parser.c',
   'src/print.c',
