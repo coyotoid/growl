@@ -16,13 +16,41 @@ struct {
   const char *name;
   U8 opcode;
 } primitives[] = {
-  {"+", OP_ADD},
+  {"nil", OP_NIL},
+  {"dup", OP_DUP},
+  {"drop", OP_DROP},
+  {"swap", OP_SWAP},
+  {">r", OP_TOR},
+  {"r>", OP_FROMR},
   {"call", OP_APPLY},
+  {"?", OP_CHOOSE},
+  {"+", OP_ADD},
+  {"-", OP_SUB},
+  {"*", OP_MUL},
+  {"/", OP_DIV},
+  {"%", OP_MOD},
+  {"=", OP_EQ},
+  {"<>", OP_NEQ},
+  {"<", OP_LT},
+  {">", OP_GT},
+  {"<=", OP_LTE},
+  {">=", OP_GTE},
   {NULL, 0},
 };
 // clang-format on
 
+V compiler_init(Cm *cm, Vm *vm, const char *name) {
+  cm->vm = vm;
+  cm->arena = &vm->arena;
+  cm->dictionary = &vm->dictionary;
+  cm->chunk = chunk_new(name);
+}
+
+V compiler_deinit(Cm *cm) { cm->dictionary = NULL; }
+
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
+static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
+
 static I compile_constant(Cm *cm, O value) {
   I idx = chunk_add_constant(cm->chunk, value);
   chunk_emit_byte(cm->chunk, OP_CONST);
@@ -30,33 +58,104 @@ static I compile_constant(Cm *cm, O value) {
   return 1;
 }
 
-static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+static I compile_call(Cm *cm, const char *name) {
+  for (Z i = 0; primitives[i].name != NULL; i++) {
+    if (strcmp(name, primitives[i].name) == 0) {
+      chunk_emit_byte(cm->chunk, primitives[i].opcode);
+      return 1;
+    }
+  }
+  Dt *word = upsert(cm->dictionary, name, NULL);
+  if (!word) {
+    fprintf(stderr, "compiler: undefined word '%s'\n", name);
+    return 0;
+  }
+  chunk_emit_byte(cm->chunk, OP_DOWORD);
+  chunk_emit_sleb128(cm->chunk, (I)word->hash);
+  return 1;
+}
+
+static I compile_command(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  curr = mpc_ast_traverse_next(next);
+  const char *name = curr->contents;
+  (void)mpc_ast_traverse_next(next);
+  curr = mpc_ast_traverse_next(next);
+  while (curr != NULL) {
+    if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, ";") == 0)
+      break;
+    I res = compile_expr(cm, curr, next);
+    if (!res)
+      return 0;
+    curr = mpc_ast_traverse_next(next);
+  }
+  compile_call(cm, name);
+  return 1;
+}
+
+static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  (void)mpc_ast_traverse_next(next); // skip 'def'
+  curr = mpc_ast_traverse_next(next);
+  const char *name = arena_strdup(cm->arena, curr->contents);
+  (void)mpc_ast_traverse_next(next); // skip '{'
+
+  Dt *entry = upsert(cm->dictionary, name, cm->arena);
+
   Cm inner = {0};
-  inner.chunk = chunk_new();
-  inner.gc = cm->gc;
+  inner.arena = cm->arena;
+  inner.chunk = chunk_new(name);
+  inner.vm = cm->vm;
   inner.dictionary = cm->dictionary;
 
-  (void)mpc_ast_traverse_next(next); // skip opening bracket
+  curr = mpc_ast_traverse_next(next);
+  while (curr != NULL) {
+    if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, "}") == 0)
+      break;
+    I res = compile_expr(&inner, curr, next);
+    if (!res) {
+      chunk_release(inner.chunk);
+      return 0;
+    }
+    curr = mpc_ast_traverse_next(next);
+  }
+
+  chunk_emit_byte(inner.chunk, OP_RETURN);
+  entry->chunk = inner.chunk;
+  // disassemble(inner.chunk, name, cm->dictionary);
+
+  return 1;
+}
+
+static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  Cm inner = {0};
+  inner.arena = cm->arena;
+  inner.chunk = chunk_new("<quotation>");
+  inner.vm = cm->vm;
+  inner.dictionary = cm->dictionary;
+
+  (void)mpc_ast_traverse_next(next);
   curr = mpc_ast_traverse_next(next);
   while (curr != NULL) {
     if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, "]") == 0)
       break;
     I res = compile_expr(&inner, curr, next);
-    if (!res)
+    if (!res) {
+      chunk_release(inner.chunk);
       return res;
+    }
     curr = mpc_ast_traverse_next(next);
   }
   chunk_emit_byte(inner.chunk, OP_RETURN);
 
-  Hd *hd = gc_alloc(cm->gc, sizeof(Hd) + sizeof(Bc *));
+  Hd *hd = gc_alloc(cm->vm, sizeof(Hd) + sizeof(Bc *));
   hd->type = OBJ_QUOT;
   Bc **chunk_ptr = (Bc **)(hd + 1);
   *chunk_ptr = inner.chunk;
 
-  O quot = BOX(hd);
-  compile_constant(cm, quot);
+  return BOX(hd);
+}
 
-  return 1;
+static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  return compile_constant(cm, compile_quotation_obj(cm, curr, next));
 }
 
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
@@ -64,16 +163,15 @@ static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
     I num = strtol(curr->contents, NULL, 0);
     return compile_constant(cm, NUM(num));
   } else if (strstr(curr->tag, "expr|word") != NULL) {
-    for (Z i = 0; primitives[i].name != NULL; i++) {
-      if (strcmp(curr->contents, primitives[i].name) == 0) {
-        chunk_emit_byte(cm->chunk, primitives[i].opcode);
-        return 1;
-      }
-    }
-    fprintf(stderr, "compiler: dictionary nyi\n");
-    return 0;
+    return compile_call(cm, curr->contents);
   } else if (strstr(curr->tag, "expr|quotation") != NULL) {
     return compile_quotation(cm, curr, next);
+  } else if (strstr(curr->tag, "expr|def") != NULL) {
+    return compile_definition(cm, curr, next);
+  } else if (strstr(curr->tag, "expr|command") != NULL) {
+    return compile_command(cm, curr, next);
+  } else if (strstr(curr->tag, "expr|comment") != NULL) {
+    return 1;
   } else {
     fprintf(stderr, "compiler: \"%s\" nyi\n", curr->tag);
     return 0;
@@ -97,20 +195,16 @@ static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   return 1;
 }
 
-Bc *compile_program(Gc *gc, mpc_ast_t *ast) {
-  Cm cm = {0};
-  cm.chunk = chunk_new();
-  cm.gc = gc;
-
+Bc *compile_program(Cm *cm, mpc_ast_t *ast) {
   mpc_ast_trav_t *next = mpc_ast_traverse_start(ast, mpc_ast_trav_order_pre);
   mpc_ast_t *curr = mpc_ast_traverse_next(&next); // Begin traversal
 
-  if (!compile_ast(&cm, curr, &next)) {
-    chunk_release(cm.chunk);
+  if (!compile_ast(cm, curr, &next)) {
+    chunk_release(cm->chunk);
     return NULL;
   }
 
-  Bc *chunk = cm.chunk;
+  Bc *chunk = cm->chunk;
   chunk_emit_byte(chunk, OP_RETURN);
   return chunk;
 }

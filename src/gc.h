@@ -4,7 +4,7 @@
 #include "common.h"
 #include "object.h"
 
-#define GC_DEBUG 1
+#define GC_DEBUG 0
 #define HEAP_BYTES (4 * 1024 * 1024)
 
 typedef struct Gs {
@@ -23,9 +23,12 @@ typedef struct Gc {
 V gc_addroot(Gc *, O *);
 I gc_mark(Gc *);
 V gc_reset(Gc *, I);
-V gc_collect(Gc *);
-Hd *gc_alloc(Gc *, Z);
 V gc_init(Gc *);
 V gc_deinit(Gc *);
+
+typedef struct Vm Vm;
+
+V gc_collect(Vm *);
+Hd *gc_alloc(Vm *, Z);
 
 #endif

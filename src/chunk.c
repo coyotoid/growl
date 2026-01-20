@@ -1,30 +1,36 @@
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "chunk.h"
-
 #include "vendor/yar.h"
 
-Bc *chunk_new(V) {
+#if CHUNK_DEBUG
+#include <stdio.h>
+#endif
+
+Bc *chunk_new(const char *name) {
   Bc *chunk = calloc(1, sizeof(Bc));
+  chunk->name = name;
   chunk->ref = 1;
+#if CHUNK_DEBUG
+  fprintf(stderr, "DEBUG: created chunk %s at %p\n", chunk->name, (V *)chunk);
+#endif
   return chunk;
 }
 
 V chunk_acquire(Bc *chunk) {
 #if CHUNK_DEBUG
-  fprintf(stderr, "DEBUG: acquiring chunk at %p\n", (V *)chunk);
+  fprintf(stderr, "DEBUG: acquiring chunk %s at %p\n", chunk->name, (V *)chunk);
 #endif
   chunk->ref++;
 }
 V chunk_release(Bc *chunk) {
 #if CHUNK_DEBUG
-  fprintf(stderr, "DEBUG: releasing chunk at %p\n", (V *)chunk);
+  fprintf(stderr, "DEBUG: releasing chunk %s at %p\n", chunk->name, (V *)chunk);
 #endif
 
   if (--chunk->ref == 0) {
 #if CHUNK_DEBUG
-    fprintf(stderr, "DEBUG: freeing chunk at %p\n", (V *)chunk);
+    fprintf(stderr, "DEBUG: freeing chunk %s at %p\n", chunk->name, (V *)chunk);
 #endif
     yar_free(&chunk->constants);
     yar_free(chunk);

@@ -3,6 +3,6 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     clang-tools bear gdb tinycc
-    meson ninja
+    meson ninja rlwrap hyperfine
   ];
 }

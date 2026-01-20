@@ -10,7 +10,13 @@ V print(O o) {
   } else if (IMM(o)) {
     printf("%" PRIdPTR, ORD(o));
   } else {
-    printf("<obj type=%ld ptr=%p>", type(o), (void *)o);
+    switch (type(o)) {
+    case TYPE_QUOT:
+      printf("<quotation>");
+      break;
+    default:
+      printf("<obj type=%ld ptr=%p>", type(o), (void *)o);
+    }
   }
 }
 

@@ -9,6 +9,7 @@
 /** Bytecode chunk */
 typedef struct Bc {
   I ref;
+  const char *name;
   U8 *items;
   Z count, capacity;
   struct {
@@ -17,7 +18,7 @@ typedef struct Bc {
   } constants;
 } Bc;
 
-Bc *chunk_new(V);
+Bc *chunk_new(const char *);
 V chunk_acquire(Bc *);
 V chunk_release(Bc *);
 

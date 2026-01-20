@@ -1,1 +1,15 @@
-[ 1 2 + ] call 3 +
+def over { swap dup >r swap r> }
+def dip  { swap >r call r> }
+def keep { over >r call r> }
+def if   { ? call }
+
+def fac {
+  dup if: 1 <= [drop 1] [dup 1 - fac *];
+}
+
+def fib {
+  dup if: 1 <= [] [dup 1 - fib swap 2 - fib +];
+}
+
+[ 20 fib ] call \=> 6765
+[ 10 fac ] call \=> 3628800

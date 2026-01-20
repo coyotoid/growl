@@ -3,22 +3,40 @@
 
 #include "common.h"
 
+#include "arena.h"
 #include "chunk.h"
+#include "dictionary.h"
 #include "gc.h"
 #include "object.h"
 
 enum {
   OP_NOP = 0,
-  OP_CONST,       // Push constant to stack
+  OP_CONST, // Push constant to stack
+  OP_NIL, // Push constant to stack
   OP_DROP,
   OP_DUP,
   OP_SWAP,
+  OP_TOR,         // Push from stack to retain stack
+  OP_FROMR,       // Push from retain stack to stack
   OP_JUMP,        // Relative jump
   OP_JUMP_IF_NIL, // Relative jump if top-of-stack is nil
   OP_CALL,
+  OP_DOWORD, // Call word from dictionary by name hash
   OP_APPLY,
   OP_RETURN,
+  OP_CHOOSE,
   OP_ADD,
+  OP_SUB,
+  OP_MUL,
+  OP_DIV,
+  OP_MOD,
+  OP_EQ,
+  OP_NEQ,
+  OP_LT,
+  OP_GT,
+  OP_LTE,
+  OP_GTE,
+  OP_PPRINT,
 };
 
 #define STACK_SIZE 256
@@ -30,10 +48,13 @@ typedef struct Fr {
 
 typedef struct Vm {
   Gc gc;
-  O stack[256], *sp;
-  Fr rstack[256], *rsp;
+  O stack[STACK_SIZE], *sp;
+  O rtstack[STACK_SIZE], *rtsp;
+  Fr rstack[STACK_SIZE], *rsp; // Return stack
   U8 *ip;
   Bc *chunk;
+  Dt *dictionary;
+  Ar arena;
 } Vm;
 
 V vm_init(Vm *);

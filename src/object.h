@@ -8,7 +8,7 @@
 #define UNBOX(x) ((Hd *)(x))
 #define IMM(x) ((O)(x) & (O)1)
 #define NUM(x) (((O)((intptr_t)(x) << 1)) | (O)1)
-#define ORD(x) ((O)(x) >> 1)
+#define ORD(x) ((intptr_t)(x) >> 1)
 
 enum {
   OBJ_FWD = 2,

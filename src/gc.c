@@ -6,6 +6,8 @@
 #include "chunk.h"
 #include "gc.h"
 #include "object.h"
+#include "src/print.h"
+#include "src/vm.h"
 #include "vendor/yar.h"
 
 #define ALIGN(n) (((n) + 7) & ~7)
@@ -58,16 +60,39 @@ static V printstats(Gc *gc, const char *label) {
 }
 #endif
 
-V gc_collect(Gc *gc) {
+V gc_collect(Vm *vm) {
+  Gc *gc = &vm->gc;
   uint8_t *scan = gc->to.free;
 
 #if GC_DEBUG
   printstats(gc, "before GC");
 #endif
 
+  // Forward roots
   for (Z i = 0; i < gc->roots.count; i++) {
     O *o = gc->roots.items[i];
     *o = forward(gc, *o);
+  }
+
+  Dt *dstack[256];
+  Dt **dsp = dstack;
+  *dsp++ = vm->dictionary;
+
+  // Forward constants referenced by dictionary entries
+  while (dsp > dstack) {
+    Dt *node = *--dsp;
+    if (!node)
+      continue;
+    if (node->name != NULL) {
+      for (Z i = 0; i < node->chunk->constants.count; i++) {
+        node->chunk->constants.items[i] =
+            forward(gc, node->chunk->constants.items[i]);
+      }
+    }
+    for (I i = 0; i < 4; i++) {
+      if (node->child[i] != NULL)
+        *dsp++ = node->child[i];
+    }
   }
 
   while (scan < gc->to.free) {
@@ -121,10 +146,11 @@ V gc_collect(Gc *gc) {
 #endif
 }
 
-Hd *gc_alloc(Gc *gc, Z sz) {
+Hd *gc_alloc(Vm *vm, Z sz) {
+  Gc *gc = &vm->gc;
   sz = ALIGN(sz);
   if (gc->from.free + sz > gc->from.end) {
-    gc_collect(gc);
+    gc_collect(vm);
     if (gc->from.free + sz > gc->from.end) {
       fprintf(stderr, "out of memory (requested %" PRIdPTR "bytes\n", sz);
       abort();
@@ -160,7 +186,6 @@ fatal:
 }
 
 V gc_deinit(Gc *gc) {
-  gc_collect(gc);
   free(gc->from.start);
   free(gc->to.start);
   yar_free(&gc->roots);
