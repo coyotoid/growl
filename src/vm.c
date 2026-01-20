@@ -31,7 +31,7 @@ static I decode_sleb128(U8 **ptr) {
 V vm_init(Vm *vm) {
   vm->sp = vm->stack;
   vm->rsp = vm->rstack;
-  vm->rtsp = vm->rtstack;
+  vm->tsp = vm->tstack;
   vm->chunk = NULL;
   vm->dictionary = NULL;
 
@@ -40,9 +40,9 @@ V vm_init(Vm *vm) {
 
   for (Z i = 0; i < STACK_SIZE; i++) {
     vm->stack[i] = NIL;
-    vm->rtstack[i] = NIL;
+    vm->tstack[i] = NIL;
     gc_addroot(&vm->gc, &vm->stack[i]);
-    gc_addroot(&vm->gc, &vm->rtstack[i]);
+    gc_addroot(&vm->gc, &vm->tstack[i]);
   }
 }
 
@@ -61,10 +61,10 @@ O vm_pop(Vm *vm) {
 }
 O vm_peek(Vm *vm) { return *(vm->sp - 1); }
 
-V vm_rtpush(Vm *vm, O o) { *vm->rtsp++ = o; }
+V vm_rtpush(Vm *vm, O o) { *vm->tsp++ = o; }
 O vm_rtpop(Vm *vm) {
-  O o = *--vm->rtsp;
-  *vm->rtsp = NIL;
+  O o = *--vm->tsp;
+  *vm->tsp = NIL;
   return o;
 }
 
@@ -137,6 +137,42 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_push(vm, a);
       break;
     }
+    case OP_NIP: {
+      /* a b -> b */
+      O b = vm_pop(vm);
+      (void)vm_pop(vm);
+      vm_push(vm, b);
+      break;
+    }
+    case OP_OVER: {
+      /* a b -> a b a */
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      vm_push(vm, a);
+      vm_push(vm, b);
+      vm_push(vm, a);
+      break;
+    }
+    case OP_BURY: {
+      /* a b c - c a b */
+      O c = vm_pop(vm);
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      vm_push(vm, c);
+      vm_push(vm, a);
+      vm_push(vm, b);
+      break;
+    }
+    case OP_DIG: {
+      /* a b c - b c a */
+      O c = vm_pop(vm);
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      vm_push(vm, b);
+      vm_push(vm, c);
+      vm_push(vm, a);
+      break;
+    }
     case OP_TOR: {
       vm_rtpush(vm, vm_pop(vm));
       break;
@@ -180,6 +216,38 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
         vm_rpush(vm, vm->chunk, vm->ip);
+        vm->chunk = chunk;
+        vm->ip = chunk->items;
+      } else {
+        fprintf(stderr, "vm: attempt to apply non-quotation object\n");
+        return 0;
+      }
+      break;
+    }
+    case OP_TAIL_CALL: {
+      I ofs = decode_sleb128(&vm->ip);
+      // Tail call: reuse current frame, just jump
+      vm->ip = chunk->items + ofs;
+      break;
+    }
+    case OP_TAIL_DOWORD: {
+      I hash = decode_sleb128(&vm->ip);
+      Dt *word = lookup_hash(&vm->dictionary, hash);
+      if (!word) {
+        fprintf(stderr, "vm: word not found (hash = %lx)\n", hash);
+        return 0;
+      }
+      // Tail call: reuse current frame
+      vm->chunk = word->chunk;
+      vm->ip = word->chunk->items;
+      break;
+    }
+    case OP_TAIL_APPLY: {
+      O quot = vm_pop(vm);
+      if (type(quot) == TYPE_QUOT) {
+        Bc **ptr = (Bc **)(UNBOX(quot) + 1);
+        Bc *chunk = *ptr;
+        // Tail call: reuse current frame
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {

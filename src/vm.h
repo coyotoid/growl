@@ -16,6 +16,10 @@ enum {
   OP_DROP,
   OP_DUP,
   OP_SWAP,
+  OP_NIP,
+  OP_OVER,
+  OP_BURY,
+  OP_DIG,
   OP_TOR,         // Push from stack to retain stack
   OP_FROMR,       // Push from retain stack to stack
   OP_JUMP,        // Relative jump
@@ -23,6 +27,9 @@ enum {
   OP_CALL,
   OP_DOWORD, // Call word from dictionary by name hash
   OP_APPLY,
+  OP_TAIL_CALL,   // Tail call within chunk (reuses current frame)
+  OP_TAIL_DOWORD, // Tail call to dictionary word (reuses current frame)
+  OP_TAIL_APPLY,  // Tail call to quotation (reuses current frame)
   OP_RETURN,
   OP_CHOOSE,
   OP_ADD,
@@ -49,8 +56,8 @@ typedef struct Fr {
 typedef struct Vm {
   Gc gc;
   O stack[STACK_SIZE], *sp;
-  O rtstack[STACK_SIZE], *rtsp;
-  Fr rstack[STACK_SIZE], *rsp; // Return stack
+  O tstack[STACK_SIZE], *tsp;
+  Fr rstack[STACK_SIZE], *rsp;
   U8 *ip;
   Bc *chunk;
   Dt *dictionary;

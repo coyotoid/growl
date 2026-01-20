@@ -20,6 +20,10 @@ struct {
   {"dup", OP_DUP},
   {"drop", OP_DROP},
   {"swap", OP_SWAP},
+  {"over", OP_OVER},
+  {"nip", OP_NIP},
+  {"bury", OP_BURY},
+  {"dig", OP_DIG},
   {">r", OP_TOR},
   {"r>", OP_FROMR},
   {"call", OP_APPLY},
@@ -47,6 +51,62 @@ V compiler_init(Cm *cm, Vm *vm, const char *name) {
 }
 
 V compiler_deinit(Cm *cm) { cm->dictionary = NULL; }
+
+static I peek_sleb128(U8 *ptr, I *out_value) {
+  I result = 0;
+  I shift = 0;
+  U8 byte;
+  I bytes = 0;
+
+  do {
+    byte = ptr[bytes];
+    bytes++;
+    result |= (I)(byte & 0x7F) << shift;
+    shift += 7;
+  } while (byte & 0x80);
+
+  if ((shift < 64) && (byte & 0x40)) {
+    result |= -(1LL << shift);
+  }
+
+  if (out_value)
+    *out_value = result;
+  return bytes;
+}
+
+static V optim_tailcall(Bc *chunk) {
+  Z i = 0;
+  while (i < chunk->count) {
+    U8 opcode = chunk->items[i];
+    if (opcode == OP_CALL) {
+      I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
+      Z next = i + 1 + ofs;
+      if (next < chunk->count && chunk->items[next] == OP_RETURN) {
+        chunk->items[i] = OP_TAIL_CALL;
+      }
+      i++;
+    } else if (opcode == OP_DOWORD) {
+      I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
+      Z next = i + 1 + ofs;
+      if (next < chunk->count && chunk->items[next] == OP_RETURN) {
+        chunk->items[i] = OP_TAIL_DOWORD;
+      }
+      i++;
+    } else if (opcode == OP_APPLY) {
+      Z ofs = i + 1;
+      if (ofs < chunk->count && chunk->items[ofs] == OP_RETURN) {
+        chunk->items[i] = OP_TAIL_APPLY;
+      }
+      i++;
+    } else if (opcode == OP_CONST || opcode == OP_JUMP ||
+               opcode == OP_JUMP_IF_NIL) {
+      I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
+      i += 1 + ofs;
+    } else {
+      i++;
+    }
+  }
+}
 
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
 static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
@@ -110,8 +170,7 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   while (curr != NULL) {
     if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, "}") == 0)
       break;
-    I res = compile_expr(&inner, curr, next);
-    if (!res) {
+    if (!compile_expr(&inner, curr, next)) {
       chunk_release(inner.chunk);
       return 0;
     }
@@ -119,8 +178,13 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   }
 
   chunk_emit_byte(inner.chunk, OP_RETURN);
+  optim_tailcall(inner.chunk);
+
   entry->chunk = inner.chunk;
-  // disassemble(inner.chunk, name, cm->dictionary);
+
+#if COMPILER_DEBUG
+  disassemble(inner.chunk, name, cm->dictionary);
+#endif
 
   return 1;
 }
@@ -145,6 +209,7 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
     curr = mpc_ast_traverse_next(next);
   }
   chunk_emit_byte(inner.chunk, OP_RETURN);
+  optim_tailcall(inner.chunk);
 
   Hd *hd = gc_alloc(cm->vm, sizeof(Hd) + sizeof(Bc *));
   hd->type = OBJ_QUOT;
@@ -206,5 +271,6 @@ Bc *compile_program(Cm *cm, mpc_ast_t *ast) {
 
   Bc *chunk = cm->chunk;
   chunk_emit_byte(chunk, OP_RETURN);
+  optim_tailcall(chunk);
   return chunk;
 }

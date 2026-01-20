@@ -6,8 +6,7 @@
 #include "chunk.h"
 #include "gc.h"
 #include "object.h"
-#include "src/print.h"
-#include "src/vm.h"
+#include "vm.h"
 #include "vendor/yar.h"
 
 #define ALIGN(n) (((n) + 7) & ~7)
@@ -83,7 +82,7 @@ V gc_collect(Vm *vm) {
     Dt *node = *--dsp;
     if (!node)
       continue;
-    if (node->name != NULL) {
+    if (node->chunk != NULL) {
       for (Z i = 0; i < node->chunk->constants.count; i++) {
         node->chunk->constants.items[i] =
             forward(gc, node->chunk->constants.items[i]);

@@ -7,7 +7,8 @@
 
 #include "vendor/mpc.h"
 
-// Forward declaration
+#define COMPILER_DEBUG 1
+
 /** Compiler context */
 typedef struct Cm {
   Vm *vm; // Parent context

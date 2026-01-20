@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "common.h"
-
 #include "chunk.h"
 #include "compile.h"
 #include "debug.h"
@@ -75,7 +73,6 @@ I loadfile(const char *fname) {
   mpc_ast_delete(res.output);
 
   if (chunk != NULL) {
-    // disassemble(chunk, fname, &vm.dictionary);
     I res = vm_run(&vm, chunk, 0);
     chunk_release(chunk);
     vm_deinit(&vm);

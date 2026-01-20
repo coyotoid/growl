@@ -124,6 +124,33 @@ Z disassemble_instruction(Bc *chunk, Z offset, Dt **dictionary) {
   case OP_APPLY:
     printf("APPLY\n");
     return offset;
+  case OP_TAIL_CALL: {
+    Z bytes_read;
+    I ofs = decode_sleb128(&chunk->items[offset], &bytes_read);
+    printf("TAIL_CALL %ld\n", ofs);
+    return offset + bytes_read;
+  }
+  case OP_TAIL_DOWORD: {
+    Z bytes_read;
+    I hash = decode_sleb128(&chunk->items[offset], &bytes_read);
+    printf("TAIL_DOWORD");
+
+    if (dictionary && *dictionary) {
+      Dt *entry = lookup_hash(dictionary, hash);
+      if (entry != NULL) {
+        printf(" %s", entry->name);
+      } else {
+        printf(" ???");
+      }
+    } else {
+      printf(" 0x%lx", hash);
+    }
+    printf("\n");
+    return offset + bytes_read;
+  }
+  case OP_TAIL_APPLY:
+    printf("TAIL_APPLY\n");
+    return offset;
   case OP_RETURN:
     printf("RETURN\n");
     return offset;

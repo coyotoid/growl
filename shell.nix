@@ -1,8 +1,18 @@
-{ pkgs ? import <nixpkgs> {} }:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    clang-tools bear gdb tinycc
-    meson ninja rlwrap hyperfine
+    clang-tools
+    bear
+    gdb
+    tinycc
+    meson
+    ninja
+    rlwrap
+    hyperfine
+    muon
+    samurai
   ];
 }
