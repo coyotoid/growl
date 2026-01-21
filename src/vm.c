@@ -1,3 +1,4 @@
+#include <setjmp.h>
 #include <stdio.h>
 
 #include "arena.h"
@@ -53,38 +54,59 @@ V vm_deinit(Vm *vm) {
   vm->dictionary = NULL;
 }
 
-V vm_push(Vm *vm, O o) { *vm->sp++ = o; }
+static V vm_error(Vm *vm, I error, const char *message) {
+  I col = -1;
+  I line = chunk_get_line(vm->chunk, vm->ip - vm->chunk->items, &col);
+  fprintf(stderr, "error at %ld:%ld: %s\n", line + 1, col + 1, message);
+  longjmp(vm->error, error);
+}
+
+V vm_push(Vm *vm, O o) {
+  if (vm->sp >= vm->stack + STACK_SIZE)
+    vm_error(vm, VM_ERR_STACK_OVERFLOW, "data stack overflow");
+  *vm->sp++ = o;
+}
 O vm_pop(Vm *vm) {
+  if (vm->sp <= vm->stack)
+    vm_error(vm, VM_ERR_STACK_UNDERFLOW, "data stack underflow");
   O o = *--vm->sp;
   *vm->sp = NIL;
   return o;
 }
-O vm_peek(Vm *vm) { return *(vm->sp - 1); }
 
-V vm_rtpush(Vm *vm, O o) { *vm->tsp++ = o; }
-O vm_rtpop(Vm *vm) {
+V vm_tpush(Vm *vm, O o) {
+  if (vm->tsp >= vm->tstack + STACK_SIZE)
+    vm_error(vm, VM_ERR_STACK_OVERFLOW, "retain stack overflow");
+  *vm->tsp++ = o;
+}
+O vm_tpop(Vm *vm) {
+  if (vm->tsp <= vm->tstack)
+    vm_error(vm, VM_ERR_STACK_UNDERFLOW, "retain stack underflow");
   O o = *--vm->tsp;
   *vm->tsp = NIL;
   return o;
 }
 
 V vm_rpush(Vm *vm, Bc *chunk, U8 *ip) {
+  if (vm->rsp >= vm->rstack + STACK_SIZE)
+    vm_error(vm, VM_ERR_STACK_OVERFLOW, "return stack overflow");
   vm->rsp->chunk = chunk;
   vm->rsp->ip = ip;
   vm->rsp++;
 }
-Fr vm_rpop(Vm *vm) { return *--vm->rsp; }
-
-static I vm_error(Vm *vm, const char *message) {
-  I col = -1;
-  I line = chunk_get_line(vm->chunk, vm->ip - vm->chunk->items, &col);
-
-  fprintf(stderr, "error at %ld:%ld: %s\n", line + 1, col + 1, message);
-  return 0;
+Fr vm_rpop(Vm *vm) {
+  if (vm->rsp <= vm->rstack)
+    vm_error(vm, VM_ERR_STACK_UNDERFLOW, "return stack underflow");
+  return *--vm->rsp;
 }
 
 I vm_run(Vm *vm, Bc *chunk, I offset) {
   I mark = gc_mark(&vm->gc);
+  if (setjmp(vm->error) != 0) {
+    gc_reset(&vm->gc, mark);
+    return 0;
+  }
+
   for (Z i = 0; i < chunk->constants.count; i++)
     gc_addroot(&vm->gc, &chunk->constants.items[i]);
 
@@ -93,7 +115,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     O b = vm_pop(vm);                                                          \
     O a = vm_pop(vm);                                                          \
     if (!IMM(a) || !IMM(b))                                                    \
-      return vm_error(vm, "arithmetic on non-numeric objects");                \
+      vm_error(vm, VM_ERR_TYPE, "arithmetic on non-numeric objects");          \
     vm_push(vm, NUM(ORD(a) op ORD(b)));                                        \
     break;                                                                     \
   }
@@ -103,7 +125,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     O b = vm_pop(vm);                                                          \
     O a = vm_pop(vm);                                                          \
     if (!IMM(a) || !IMM(b))                                                    \
-      return vm_error(vm, "comparison on non-numeric objects");                \
+      vm_error(vm, VM_ERR_TYPE, "comparison on non-numeric objects");          \
     vm_push(vm, (ORD(a) op ORD(b)) ? NUM(1) : NIL);                            \
     break;                                                                     \
   }
@@ -178,11 +200,11 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       break;
     }
     case OP_TOR: {
-      vm_rtpush(vm, vm_pop(vm));
+      vm_tpush(vm, vm_pop(vm));
       break;
     }
     case OP_FROMR: {
-      vm_push(vm, vm_rtpop(vm));
+      vm_push(vm, vm_tpop(vm));
       break;
     }
     case OP_JUMP: {
@@ -206,7 +228,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
       if (!word)
-        return vm_error(vm, "word not found");
+        vm_error(vm, VM_ERR_RUNTIME, "word not found");
       vm_rpush(vm, vm->chunk, vm->ip);
       vm->chunk = word->chunk;
       vm->ip = word->chunk->items;
@@ -221,13 +243,12 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        return vm_error(vm, "attempt to apply non-quotation object");
+        vm_error(vm, VM_ERR_TYPE, "attempt to apply non-quotation object");
       }
       break;
     }
     case OP_TAIL_CALL: {
       I ofs = decode_sleb128(&vm->ip);
-      // Tail call: reuse current frame, just jump
       vm->ip = chunk->items + ofs;
       break;
     }
@@ -235,8 +256,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
       if (!word)
-        return vm_error(vm, "word not found");
-      // Tail call: reuse current frame
+        vm_error(vm, VM_ERR_RUNTIME, "word not found");
       vm->chunk = word->chunk;
       vm->ip = word->chunk->items;
       break;
@@ -246,11 +266,10 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       if (type(quot) == TYPE_QUOT) {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
-        // Tail call: reuse current frame
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        return vm_error(vm, "attempt to apply non-quotation object\n");
+        vm_error(vm, VM_ERR_TYPE, "attempt to apply non-quotation object\n");
       }
       break;
     }
@@ -260,7 +279,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = frame.chunk;
         vm->ip = frame.ip;
       } else {
-        goto done;
+        return 1;
       }
       break;
     case OP_CHOOSE: {
@@ -296,20 +315,14 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       CMPOP(<=);
     case OP_GTE:
       CMPOP(>=);
+    case OP_PPRINT: {
+      O obj = vm_pop(vm);
+      println(obj);
+      break;
+    }
     default:
-      vm_error(vm, "unknown opcode");
-      return 0;
+      vm_error(vm, VM_ERR_RUNTIME, "unknown opcode");
     }
-  }
-
-done:
-  gc_reset(&vm->gc, mark);
-  if (vm->sp != vm->stack) {
-    for (O *i = vm->stack; i < vm->sp; i++) {
-      print(*i);
-      putchar(' ');
-    }
-    putchar('\n');
   }
   return 1;
 }

@@ -40,6 +40,15 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     putchar(' ');
   fflush(stdout);
   printf("%04zu ", offset);
+
+  I col = -1;
+  I line = chunk_get_line(chunk, offset, &col);
+  if (line >= 0) {
+    printf("%4ld:%-3ld ", line + 1, col + 1);
+  } else {
+    printf("        ");
+  }
+
   U8 opcode = chunk->items[offset++];
 
 #define CASE(name) case OP_##name:
@@ -157,6 +166,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(GT);
     SIMPLE(LTE);
     SIMPLE(GTE);
+    SIMPLE(PPRINT);
   default:
     printf("??? (%d)\n", opcode);
     return offset;

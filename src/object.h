@@ -29,6 +29,12 @@ typedef struct Hd {
   U32 size, type;
 } Hd;
 
+/** String */
+typedef struct Str {
+  Z len;
+  char data[];
+} Str;
+
 I type(O);
 
 #endif

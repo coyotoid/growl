@@ -8,6 +8,7 @@
 #include "dictionary.h"
 #include "gc.h"
 #include "object.h"
+#include <setjmp.h>
 
 enum {
   OP_NOP = 0,
@@ -62,14 +63,17 @@ typedef struct Vm {
   Bc *chunk;
   Dt *dictionary;
   Ar arena;
+  jmp_buf error;
 } Vm;
+
+enum {
+  VM_ERR_STACK_OVERFLOW = 1,
+  VM_ERR_STACK_UNDERFLOW,
+  VM_ERR_TYPE,
+  VM_ERR_RUNTIME
+};
 
 V vm_init(Vm *);
 V vm_deinit(Vm *);
-
-V vm_push(Vm *, O);
-O vm_pop(Vm *);
-O vm_peek(Vm *);
-
 I vm_run(Vm *, Bc *, I);
 #endif

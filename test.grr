@@ -6,4 +6,4 @@ def fib/aux {
 }
 def fib { 0 1 fib/aux }
 
-[ 50 fib ] call
+[ 50 fib ] call .

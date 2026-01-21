@@ -42,6 +42,7 @@ struct {
   {">",    {OP_GT, 0}},
   {"<=",   {OP_LTE, 0}},
   {">=",   {OP_GTE, 0}},
+  {".",    {OP_PPRINT, 0}},
   {NULL,   {0}},
 };
 // clang-format on
@@ -144,6 +145,8 @@ static I compile_call(Cm *cm, const char *name, I line, I col) {
 static I compile_command(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   curr = mpc_ast_traverse_next(next);
   const char *name = curr->contents;
+  I name_line = curr->state.row;
+  I name_col = curr->state.col;
   (void)mpc_ast_traverse_next(next);
   curr = mpc_ast_traverse_next(next);
   while (curr != NULL) {
@@ -154,7 +157,7 @@ static I compile_command(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
       return 0;
     curr = mpc_ast_traverse_next(next);
   }
-  compile_call(cm, name, curr->state.row, curr->state.col);
+  compile_call(cm, name, name_line, name_col);
   return 1;
 }
 
