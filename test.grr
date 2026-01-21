@@ -1,7 +1,3 @@
-def dip  { swap >r call r> }
-def keep { over >r call r> }
-def if   { ? call }
-
 def fib/aux {
   if: dig dup 0 =
     [drop drop]
@@ -10,4 +6,4 @@ def fib/aux {
 }
 def fib { 0 1 fib/aux }
 
-[ 50 fib ] call \=> 12586269025
+[ 50 fib ] call

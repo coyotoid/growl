@@ -14,32 +14,35 @@
 // clang-format off
 struct {
   const char *name;
-  U8 opcode;
+  U8 opcode[8];
 } primitives[] = {
-  {"nil", OP_NIL},
-  {"dup", OP_DUP},
-  {"drop", OP_DROP},
-  {"swap", OP_SWAP},
-  {"over", OP_OVER},
-  {"nip", OP_NIP},
-  {"bury", OP_BURY},
-  {"dig", OP_DIG},
-  {">r", OP_TOR},
-  {"r>", OP_FROMR},
-  {"call", OP_APPLY},
-  {"?", OP_CHOOSE},
-  {"+", OP_ADD},
-  {"-", OP_SUB},
-  {"*", OP_MUL},
-  {"/", OP_DIV},
-  {"%", OP_MOD},
-  {"=", OP_EQ},
-  {"<>", OP_NEQ},
-  {"<", OP_LT},
-  {">", OP_GT},
-  {"<=", OP_LTE},
-  {">=", OP_GTE},
-  {NULL, 0},
+  {"nil",  {OP_NIL, 0}},
+  {"dup",  {OP_DUP, 0}},
+  {"drop", {OP_DROP, 0}},
+  {"swap", {OP_SWAP, 0}},
+  {"over", {OP_OVER, 0}},
+  {"nip",  {OP_NIP, 0}},
+  {"bury", {OP_BURY, 0}},
+  {"dig",  {OP_DIG, 0}},
+  {">r",   {OP_TOR, 0}},
+  {"r>",   {OP_FROMR, 0}},
+  {"dip",  {OP_SWAP, OP_TOR, OP_APPLY, OP_FROMR, 0}},
+  {"keep", {OP_OVER, OP_TOR, OP_APPLY, OP_FROMR, 0}},
+  {"if",   {OP_CHOOSE, OP_APPLY, 0}},
+  {"call", {OP_APPLY, 0}},
+  {"?",    {OP_CHOOSE, 0}},
+  {"+",    {OP_ADD, 0}},
+  {"-",    {OP_SUB, 0}},
+  {"*",    {OP_MUL, 0}},
+  {"/",    {OP_DIV, 0}},
+  {"%",    {OP_MOD, 0}},
+  {"=",    {OP_EQ, 0}},
+  {"<>",   {OP_NEQ, 0}},
+  {"<",    {OP_LT, 0}},
+  {">",    {OP_GT, 0}},
+  {"<=",   {OP_LTE, 0}},
+  {">=",   {OP_GTE, 0}},
+  {NULL,   {0}},
 };
 // clang-format on
 
@@ -111,26 +114,29 @@ static V optim_tailcall(Bc *chunk) {
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
 static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
 
-static I compile_constant(Cm *cm, O value) {
+static I compile_constant(Cm *cm, O value, I line, I col) {
   I idx = chunk_add_constant(cm->chunk, value);
-  chunk_emit_byte(cm->chunk, OP_CONST);
+  chunk_emit_byte_with_line(cm->chunk, OP_CONST, line, col);
   chunk_emit_sleb128(cm->chunk, idx);
   return 1;
 }
 
-static I compile_call(Cm *cm, const char *name) {
+static I compile_call(Cm *cm, const char *name, I line, I col) {
   for (Z i = 0; primitives[i].name != NULL; i++) {
     if (strcmp(name, primitives[i].name) == 0) {
-      chunk_emit_byte(cm->chunk, primitives[i].opcode);
+      for (Z j = 0; primitives[i].opcode[j] != 0; j++)
+        chunk_emit_byte_with_line(cm->chunk, primitives[i].opcode[j], line,
+                                  col);
       return 1;
     }
   }
   Dt *word = upsert(cm->dictionary, name, NULL);
   if (!word) {
-    fprintf(stderr, "compiler: undefined word '%s'\n", name);
+    fprintf(stderr, "compiler error at %ld:%ld: undefined word '%s'\n",
+            line + 1, col + 1, name);
     return 0;
   }
-  chunk_emit_byte(cm->chunk, OP_DOWORD);
+  chunk_emit_byte_with_line(cm->chunk, OP_DOWORD, line, col);
   chunk_emit_sleb128(cm->chunk, (I)word->hash);
   return 1;
 }
@@ -148,7 +154,7 @@ static I compile_command(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
       return 0;
     curr = mpc_ast_traverse_next(next);
   }
-  compile_call(cm, name);
+  compile_call(cm, name, curr->state.row, curr->state.col);
   return 1;
 }
 
@@ -177,7 +183,8 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
     curr = mpc_ast_traverse_next(next);
   }
 
-  chunk_emit_byte(inner.chunk, OP_RETURN);
+  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, curr->state.row,
+                            curr->state.col);
   optim_tailcall(inner.chunk);
 
   entry->chunk = inner.chunk;
@@ -219,18 +226,21 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   return BOX(hd);
 }
 
-static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  return compile_constant(cm, compile_quotation_obj(cm, curr, next));
+static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next,
+                           I line, I col) {
+  return compile_constant(cm, compile_quotation_obj(cm, curr, next), line, col);
 }
 
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  I line = curr->state.row;
+  I col = curr->state.col;
   if (strstr(curr->tag, "expr|number") != NULL) {
     I num = strtol(curr->contents, NULL, 0);
-    return compile_constant(cm, NUM(num));
+    return compile_constant(cm, NUM(num), line, col);
   } else if (strstr(curr->tag, "expr|word") != NULL) {
-    return compile_call(cm, curr->contents);
+    return compile_call(cm, curr->contents, line, col);
   } else if (strstr(curr->tag, "expr|quotation") != NULL) {
-    return compile_quotation(cm, curr, next);
+    return compile_quotation(cm, curr, next, line, col);
   } else if (strstr(curr->tag, "expr|def") != NULL) {
     return compile_definition(cm, curr, next);
   } else if (strstr(curr->tag, "expr|command") != NULL) {
@@ -238,7 +248,8 @@ static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   } else if (strstr(curr->tag, "expr|comment") != NULL) {
     return 1;
   } else {
-    fprintf(stderr, "compiler: \"%s\" nyi\n", curr->tag);
+    fprintf(stderr, "compiler error at %ld:%ld: \"%s\" nyi\n", line + 1,
+            col + 1, curr->tag);
     return 0;
   }
 

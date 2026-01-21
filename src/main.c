@@ -73,6 +73,9 @@ I loadfile(const char *fname) {
   mpc_ast_delete(res.output);
 
   if (chunk != NULL) {
+#if COMPILER_DEBUG
+    disassemble(chunk, fname, &vm.dictionary);
+#endif
     I res = vm_run(&vm, chunk, 0);
     chunk_release(chunk);
     vm_deinit(&vm);

@@ -59,3 +59,31 @@ I chunk_add_constant(Bc *chunk, O value) {
   *yar_append(&chunk->constants) = value;
   return mark;
 }
+
+V chunk_emit_byte_with_line(Bc *chunk, U8 byte, I line, I col) {
+  *yar_append(chunk) = byte;
+  if (chunk->lines.count == 0 ||
+      chunk->lines.items[chunk->lines.count - 1].row != line ||
+      chunk->lines.items[chunk->lines.count - 1].col != col) {
+    Bl *entry = yar_append(&chunk->lines);
+    entry->offset = chunk->count - 1;
+    entry->row = line;
+    entry->col = col;
+  }
+}
+
+I chunk_get_line(Bc *chunk, Z offset, I *out_col) {
+  if (chunk->lines.count == 0)
+    return -1;
+  Z left = 0, right = chunk->lines.count - 1;
+  while (left < right) {
+    Z mid = left + (right - left + 1) / 2;
+    if (chunk->lines.items[mid].offset <= offset)
+      left = mid;
+    else
+      right = mid - 1;
+  }
+  if (out_col)
+    *out_col = chunk->lines.items[left].col;
+  return chunk->lines.items[left].row;
+}

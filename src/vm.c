@@ -75,6 +75,14 @@ V vm_rpush(Vm *vm, Bc *chunk, U8 *ip) {
 }
 Fr vm_rpop(Vm *vm) { return *--vm->rsp; }
 
+static I vm_error(Vm *vm, const char *message) {
+  I col = -1;
+  I line = chunk_get_line(vm->chunk, vm->ip - vm->chunk->items, &col);
+
+  fprintf(stderr, "error at %ld:%ld: %s\n", line + 1, col + 1, message);
+  return 0;
+}
+
 I vm_run(Vm *vm, Bc *chunk, I offset) {
   I mark = gc_mark(&vm->gc);
   for (Z i = 0; i < chunk->constants.count; i++)
@@ -84,10 +92,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
   {                                                                            \
     O b = vm_pop(vm);                                                          \
     O a = vm_pop(vm);                                                          \
-    if (!IMM(a) || !IMM(b)) {                                                  \
-      fprintf(stderr, "vm: arithmetic on non-number objects\n");               \
-      return 0;                                                                \
-    }                                                                          \
+    if (!IMM(a) || !IMM(b))                                                    \
+      return vm_error(vm, "arithmetic on non-numeric objects");                \
     vm_push(vm, NUM(ORD(a) op ORD(b)));                                        \
     break;                                                                     \
   }
@@ -96,10 +102,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
   {                                                                            \
     O b = vm_pop(vm);                                                          \
     O a = vm_pop(vm);                                                          \
-    if (!IMM(a) || !IMM(b)) {                                                  \
-      fprintf(stderr, "vm: arithmetic on non-number objects\n");               \
-      return 0;                                                                \
-    }                                                                          \
+    if (!IMM(a) || !IMM(b))                                                    \
+      return vm_error(vm, "comparison on non-numeric objects");                \
     vm_push(vm, (ORD(a) op ORD(b)) ? NUM(1) : NIL);                            \
     break;                                                                     \
   }
@@ -201,10 +205,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     case OP_DOWORD: {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
-      if (!word) {
-        fprintf(stderr, "vm: word not found (hash = %lx)\n", hash);
-        return 0;
-      }
+      if (!word)
+        return vm_error(vm, "word not found");
       vm_rpush(vm, vm->chunk, vm->ip);
       vm->chunk = word->chunk;
       vm->ip = word->chunk->items;
@@ -219,8 +221,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        fprintf(stderr, "vm: attempt to apply non-quotation object\n");
-        return 0;
+        return vm_error(vm, "attempt to apply non-quotation object");
       }
       break;
     }
@@ -233,10 +234,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     case OP_TAIL_DOWORD: {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
-      if (!word) {
-        fprintf(stderr, "vm: word not found (hash = %lx)\n", hash);
-        return 0;
-      }
+      if (!word)
+        return vm_error(vm, "word not found");
       // Tail call: reuse current frame
       vm->chunk = word->chunk;
       vm->ip = word->chunk->items;
@@ -251,8 +250,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        fprintf(stderr, "vm: attempt to apply non-quotation object\n");
-        return 0;
+        return vm_error(vm, "attempt to apply non-quotation object\n");
       }
       break;
     }
@@ -299,7 +297,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     case OP_GTE:
       CMPOP(>=);
     default:
-      fprintf(stderr, "unknown opcode %d\n", opcode);
+      vm_error(vm, "unknown opcode");
       return 0;
     }
   }

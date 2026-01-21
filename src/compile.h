@@ -7,7 +7,7 @@
 
 #include "vendor/mpc.h"
 
-#define COMPILER_DEBUG 1
+#define COMPILER_DEBUG 0
 
 /** Compiler context */
 typedef struct Cm {
