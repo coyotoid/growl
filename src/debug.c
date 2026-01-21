@@ -91,24 +91,6 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(DIG);
     SIMPLE(TOR);
     SIMPLE(FROMR);
-    CASE(JUMP) {
-      Z bytes_read;
-      I ofs = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("JUMP %ld -> %zu\n", ofs, offset + bytes_read + ofs);
-      return offset + bytes_read;
-    }
-    CASE(JUMP_IF_NIL) {
-      Z bytes_read;
-      I ofs = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("JUMP_IF_NIL %ld -> %zu\n", ofs, offset + bytes_read + ofs);
-      return offset + bytes_read;
-    }
-    CASE(CALL) {
-      Z bytes_read;
-      I ofs = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("CALL %ld\n", ofs);
-      return offset + bytes_read;
-    }
     CASE(DOWORD) {
       Z bytes_read;
       I hash = decode_sleb128(&chunk->items[offset], &bytes_read);
@@ -127,13 +109,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
       printf("\n");
       return offset + bytes_read;
     }
-    SIMPLE(APPLY);
-    CASE(TAIL_CALL) {
-      Z bytes_read;
-      I ofs = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("TAIL_CALL %ld\n", ofs);
-      return offset + bytes_read;
-    }
+    SIMPLE(CALL);
     CASE(TAIL_DOWORD) {
       Z bytes_read;
       I hash = decode_sleb128(&chunk->items[offset], &bytes_read);
@@ -152,7 +128,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
       printf("\n");
       return offset + bytes_read;
     }
-    SIMPLE(TAIL_APPLY);
+    SIMPLE(TAIL_CALL);
     SIMPLE(RETURN);
     SIMPLE(CHOOSE);
     SIMPLE(ADD);
@@ -166,7 +142,10 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(GT);
     SIMPLE(LTE);
     SIMPLE(GTE);
+    SIMPLE(TYPE);
+    SIMPLE(CONCAT);
     SIMPLE(PPRINT);
+    SIMPLE(PRINTSTACK);
   default:
     printf("??? (%d)\n", opcode);
     return offset;

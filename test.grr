@@ -1,9 +1,25 @@
 def fib/aux {
   if: dig dup 0 =
     [drop drop]
-    [bury [swap 1 - swap] dip dup [+] dip swap fib/aux]
-  ;
+    [bury [swap 1 - swap] dip dup [+] dip swap fib/aux];
 }
 def fib { 0 1 fib/aux }
 
-[ 50 fib ] call .
+"50 fib => " type
+50 fib .
+
+def times {
+  if: over 0 =
+    [drop drop]
+    [swap over >r >r call r> 1 - r> times];
+}
+
+\ We can also calculate the Fibonnaci numbers using the `times' combinator
+\ we just implemented:
+
+def fib-iter {
+  0 1 dig times: [dup [+] dip swap]; drop
+}
+
+"50 fib-iter => " type
+50 fib-iter .

@@ -1,6 +1,8 @@
 #ifndef VM_H
 #define VM_H
 
+#include <setjmp.h>
+
 #include "common.h"
 
 #include "arena.h"
@@ -8,7 +10,6 @@
 #include "dictionary.h"
 #include "gc.h"
 #include "object.h"
-#include <setjmp.h>
 
 enum {
   OP_NOP = 0,
@@ -23,14 +24,10 @@ enum {
   OP_DIG,
   OP_TOR,         // Push from stack to retain stack
   OP_FROMR,       // Push from retain stack to stack
-  OP_JUMP,        // Relative jump
-  OP_JUMP_IF_NIL, // Relative jump if top-of-stack is nil
-  OP_CALL,
   OP_DOWORD, // Call word from dictionary by name hash
-  OP_APPLY,
-  OP_TAIL_CALL,   // Tail call within chunk (reuses current frame)
+  OP_CALL,
   OP_TAIL_DOWORD, // Tail call to dictionary word (reuses current frame)
-  OP_TAIL_APPLY,  // Tail call to quotation (reuses current frame)
+  OP_TAIL_CALL,  // Tail call to quotation (reuses current frame)
   OP_RETURN,
   OP_CHOOSE,
   OP_ADD,
@@ -44,7 +41,10 @@ enum {
   OP_GT,
   OP_LTE,
   OP_GTE,
+  OP_TYPE,
+  OP_CONCAT,
   OP_PPRINT,
+  OP_PRINTSTACK,
 };
 
 #define STACK_SIZE 256

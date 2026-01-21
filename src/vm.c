@@ -8,6 +8,7 @@
 #include "gc.h"
 #include "object.h"
 #include "print.h"
+#include "string.h"
 #include "vm.h"
 
 static I decode_sleb128(U8 **ptr) {
@@ -207,23 +208,6 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_push(vm, vm_tpop(vm));
       break;
     }
-    case OP_JUMP: {
-      I ofs = decode_sleb128(&vm->ip);
-      vm->ip += ofs;
-      break;
-    }
-    case OP_JUMP_IF_NIL: {
-      I ofs = decode_sleb128(&vm->ip);
-      if (vm_pop(vm) == NIL)
-        vm->ip += ofs;
-      break;
-    }
-    case OP_CALL: {
-      I ofs = decode_sleb128(&vm->ip);
-      vm_rpush(vm, vm->chunk, vm->ip);
-      vm->ip = chunk->items + ofs;
-      break;
-   }
     case OP_DOWORD: {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
@@ -234,7 +218,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm->ip = word->chunk->items;
       break;
     }
-    case OP_APPLY: {
+    case OP_CALL: {
       O quot = vm_pop(vm);
       if (type(quot) == TYPE_QUOT) {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
@@ -243,13 +227,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        vm_error(vm, VM_ERR_TYPE, "attempt to apply non-quotation object");
+        vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object");
       }
-      break;
-    }
-    case OP_TAIL_CALL: {
-      I ofs = decode_sleb128(&vm->ip);
-      vm->ip = chunk->items + ofs;
       break;
     }
     case OP_TAIL_DOWORD: {
@@ -261,7 +240,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm->ip = word->chunk->items;
       break;
     }
-    case OP_TAIL_APPLY: {
+    case OP_TAIL_CALL: {
       O quot = vm_pop(vm);
       if (type(quot) == TYPE_QUOT) {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
@@ -269,7 +248,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = chunk;
         vm->ip = chunk->items;
       } else {
-        vm_error(vm, VM_ERR_TYPE, "attempt to apply non-quotation object\n");
+        vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object\n");
       }
       break;
     }
@@ -315,9 +294,35 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       CMPOP(<=);
     case OP_GTE:
       CMPOP(>=);
+    case OP_CONCAT: {
+      Str *b = string_unwrap(vm_pop(vm));
+      if (b == NULL)
+        vm_error(vm, VM_ERR_TYPE, "expected string");
+      Str *a = string_unwrap(vm_pop(vm));
+      if (a == NULL)
+        vm_error(vm, VM_ERR_TYPE, "expected string");
+      vm_push(vm, string_concat(vm, a, b));
+      break;
+    }
+    case OP_TYPE: {
+      Str *s = string_unwrap(vm_pop(vm));
+      if (s == NULL)
+        vm_error(vm, VM_ERR_TYPE, "expected string");
+      printf("%.*s", (int)s->len, s->data);
+      break;
+    }
     case OP_PPRINT: {
       O obj = vm_pop(vm);
       println(obj);
+      break;
+    }
+    case OP_PRINTSTACK: {
+      printf("Stk:");
+      for (O *p = vm->stack; p < vm->sp; p++) {
+        putchar(' ');
+        print(*p);
+      }
+      putchar('\n');
       break;
     }
     default:

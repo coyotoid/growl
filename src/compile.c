@@ -8,6 +8,7 @@
 #include "gc.h"
 #include "object.h"
 #include "vm.h"
+#include "string.h"
 
 #include "vendor/mpc.h"
 
@@ -26,10 +27,10 @@ struct {
   {"dig",  {OP_DIG, 0}},
   {">r",   {OP_TOR, 0}},
   {"r>",   {OP_FROMR, 0}},
-  {"dip",  {OP_SWAP, OP_TOR, OP_APPLY, OP_FROMR, 0}},
-  {"keep", {OP_OVER, OP_TOR, OP_APPLY, OP_FROMR, 0}},
-  {"if",   {OP_CHOOSE, OP_APPLY, 0}},
-  {"call", {OP_APPLY, 0}},
+  {"dip",  {OP_SWAP, OP_TOR, OP_CALL, OP_FROMR, 0}},
+  {"keep", {OP_OVER, OP_TOR, OP_CALL, OP_FROMR, 0}},
+  {"if",   {OP_CHOOSE, OP_CALL, 0}},
+  {"call", {OP_CALL, 0}},
   {"?",    {OP_CHOOSE, 0}},
   {"+",    {OP_ADD, 0}},
   {"-",    {OP_SUB, 0}},
@@ -42,7 +43,10 @@ struct {
   {">",    {OP_GT, 0}},
   {"<=",   {OP_LTE, 0}},
   {">=",   {OP_GTE, 0}},
+  {"type", {OP_TYPE, 0}},
+  {"^",    {OP_CONCAT, 0}},
   {".",    {OP_PPRINT, 0}},
+  {".s",   {OP_PRINTSTACK, 0}},
   {NULL,   {0}},
 };
 // clang-format on
@@ -82,28 +86,20 @@ static V optim_tailcall(Bc *chunk) {
   Z i = 0;
   while (i < chunk->count) {
     U8 opcode = chunk->items[i];
-    if (opcode == OP_CALL) {
-      I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
-      Z next = i + 1 + ofs;
-      if (next < chunk->count && chunk->items[next] == OP_RETURN) {
-        chunk->items[i] = OP_TAIL_CALL;
-      }
-      i++;
-    } else if (opcode == OP_DOWORD) {
+    if (opcode == OP_DOWORD) {
       I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
       Z next = i + 1 + ofs;
       if (next < chunk->count && chunk->items[next] == OP_RETURN) {
         chunk->items[i] = OP_TAIL_DOWORD;
       }
       i++;
-    } else if (opcode == OP_APPLY) {
+    } else if (opcode == OP_CALL) {
       Z ofs = i + 1;
       if (ofs < chunk->count && chunk->items[ofs] == OP_RETURN) {
-        chunk->items[i] = OP_TAIL_APPLY;
+        chunk->items[i] = OP_TAIL_CALL;
       }
       i++;
-    } else if (opcode == OP_CONST || opcode == OP_JUMP ||
-               opcode == OP_JUMP_IF_NIL) {
+    } else if (opcode == OP_CONST) {
       I ofs = peek_sleb128(&chunk->items[i + 1], NULL);
       i += 1 + ofs;
     } else {
@@ -240,6 +236,14 @@ static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   if (strstr(curr->tag, "expr|number") != NULL) {
     I num = strtol(curr->contents, NULL, 0);
     return compile_constant(cm, NUM(num), line, col);
+  } else if (strstr(curr->tag, "expr|string") != NULL) {
+    curr->contents[strlen(curr->contents) - 1] = '\0';
+    char *unescaped = malloc(strlen(curr->contents + 1) + 1);
+    strcpy(unescaped, curr->contents + 1);
+    unescaped = mpcf_unescape(unescaped);
+    O obj = string_make(cm->vm, unescaped, -1);
+    free(unescaped);
+    return compile_constant(cm, obj, line, col);
   } else if (strstr(curr->tag, "expr|word") != NULL) {
     return compile_call(cm, curr->contents, line, col);
   } else if (strstr(curr->tag, "expr|quotation") != NULL) {

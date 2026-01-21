@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "object.h"
+#include "string.h"
 #include "print.h"
 
 V print(O o) {
@@ -10,10 +11,16 @@ V print(O o) {
   } else if (IMM(o)) {
     printf("%" PRIdPTR, ORD(o));
   } else {
-    switch (type(o)) {
-    case TYPE_QUOT:
+    Hd *hdr = UNBOX(o);
+    switch (hdr->type) {
+    case OBJ_QUOT:
       printf("<quotation>");
       break;
+    case OBJ_STR: {
+      Str *s = string_unwrap(o);
+      printf("\"%.*s\"", (int)s->len, s->data);
+      break;
+    }
     default:
       printf("<obj type=%ld ptr=%p>", type(o), (void *)o);
     }

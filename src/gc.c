@@ -6,8 +6,8 @@
 #include "chunk.h"
 #include "gc.h"
 #include "object.h"
-#include "vm.h"
 #include "vendor/yar.h"
+#include "vm.h"
 
 #define ALIGN(n) (((n) + 7) & ~7)
 static inline int infrom(Gc *gc, V *ptr) {
@@ -67,7 +67,6 @@ V gc_collect(Vm *vm) {
   printstats(gc, "before GC");
 #endif
 
-  // Forward roots
   for (Z i = 0; i < gc->roots.count; i++) {
     O *o = gc->roots.items[i];
     *o = forward(gc, *o);

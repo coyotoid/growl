@@ -9,3 +9,7 @@
           (      ) | |
   ________|   _/_  | |
 <__________\______)\__)
+
+TODO:
+- [ ] "#load" pragma
+- [ ] hand-rolled parser

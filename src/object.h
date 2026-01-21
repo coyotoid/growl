@@ -13,6 +13,7 @@
 enum {
   OBJ_FWD = 2,
   OBJ_QUOT,
+  OBJ_STR,
 };
 
 enum {
@@ -20,6 +21,7 @@ enum {
   TYPE_NUM = 1,
   TYPE_FWD = OBJ_FWD,
   TYPE_QUOT = OBJ_QUOT,
+  TYPE_STR = OBJ_STR,
 };
 
 typedef uintptr_t O;
@@ -28,12 +30,6 @@ typedef uintptr_t O;
 typedef struct Hd {
   U32 size, type;
 } Hd;
-
-/** String */
-typedef struct Str {
-  Z len;
-  char data[];
-} Str;
 
 I type(O);
 
