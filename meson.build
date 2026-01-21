@@ -18,6 +18,7 @@ sources = [
   'src/print.c',
   'src/string.c',
   'src/vm.c',
+  'src/vendor/linenoise.c',
   'src/vendor/mpc.c',
   'src/vendor/yar.c',
 ]

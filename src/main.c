@@ -7,6 +7,7 @@
 #include "parser.h"
 #include "vm.h"
 
+#include "vendor/linenoise.h"
 #include "vendor/mpc.h"
 
 #define REPL_BUFFER_SIZE 4096
@@ -15,29 +16,11 @@ I repl(void) {
   Vm vm = {0};
   vm_init(&vm);
 
-  char input[REPL_BUFFER_SIZE];
-
-  for (;;) {
-    printf("> ");
-    fflush(stdout);
-    if (fgets(input, REPL_BUFFER_SIZE, stdin) == NULL) {
-      printf("\n");
-      break;
-    }
-    I is_empty = 1;
-    for (char *p = input; *p; p++) {
-      if (*p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') {
-        is_empty = 0;
-        break;
-      }
-    }
-    if (is_empty)
-      continue;
-    if (strncmp(input, "bye", 3) == 0 || strncmp(input, "quit", 4) == 0)
-      break;
+  char *line;
+  while ((line = linenoise("growl> ")) != NULL) {
     mpc_result_t res;
-    if (!mpc_parse("<repl>", input, Program, &res)) {
-      mpc_err_print(res.error);
+    if (!mpc_parse("<repl>", line, Program, &res)) {
+      mpc_err_print_to(res.error, stderr);
       mpc_err_delete(res.error);
       continue;
     }
@@ -48,8 +31,10 @@ I repl(void) {
     if (chunk != NULL) {
       vm_run(&vm, chunk, 0);
       chunk_release(chunk);
+      linenoiseHistoryAdd(line);
     }
     compiler_deinit(&cm);
+    linenoiseFree(line);
   }
   vm_deinit(&vm);
   return 0;
