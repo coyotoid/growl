@@ -223,7 +223,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_rpush(vm, vm->chunk, vm->ip);
       vm->ip = chunk->items + ofs;
       break;
-    }
+   }
     case OP_DOWORD: {
       I hash = decode_sleb128(&vm->ip);
       Dt *word = lookup_hash(&vm->dictionary, hash);
@@ -279,7 +279,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         vm->chunk = frame.chunk;
         vm->ip = frame.ip;
       } else {
-        return 1;
+        goto done;
       }
       break;
     case OP_CHOOSE: {
@@ -324,5 +324,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_error(vm, VM_ERR_RUNTIME, "unknown opcode");
     }
   }
+done:
+  gc_reset(&vm->gc, mark);
   return 1;
 }
