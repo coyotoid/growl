@@ -7,7 +7,7 @@
 
 #include "vendor/mpc.h"
 
-#define COMPILER_DEBUG DEBUG
+#define COMPILER_DEBUG 0
 
 /** Compiler context */
 typedef struct Cm {
@@ -19,12 +19,4 @@ typedef struct Cm {
 
 V compiler_init(Cm *, Vm *, const char *);
 V compiler_deinit(Cm *);
-
-// Hash function for word names
-U64 hash64(const char *);
-
-// Dictionary lookup
-Dt *upsert(Dt **, const char *, Ar *);
-
-// The chunk returned by `compile_program` is owned by the caller.
 Bc *compile_program(Cm *, mpc_ast_t *);

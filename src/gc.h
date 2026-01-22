@@ -4,7 +4,7 @@
 #include "common.h"
 #include "object.h"
 
-#define GC_DEBUG 1
+#define GC_DEBUG 0
 #if GC_DEBUG
 #define HEAP_BYTES (8 * 1024)
 #else

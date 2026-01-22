@@ -11,6 +11,7 @@
 #include "vm.h"
 
 #include "vendor/mpc.h"
+#include "vendor/yar.h"
 
 // clang-format off
 struct {
@@ -124,6 +125,18 @@ static I compile_constant(Cm *cm, O value, I line, I col) {
   return 1;
 }
 
+static I add_sym(Bc *chunk, const char *name, Dt *word) {
+  for (Z i = 0; i < chunk->symbols.count; i++) {
+    if (strcmp(chunk->symbols.items[i].name, name) == 0)
+      return i;
+  }
+  Z idx = chunk->symbols.count;
+  Bs *sym = yar_append(&chunk->symbols);
+  sym->name = name;
+  sym->resolved = word;
+  return idx;
+}
+
 static I compile_call(Cm *cm, const char *name, I line, I col) {
   for (Z i = 0; primitives[i].name != NULL; i++) {
     if (strcmp(name, primitives[i].name) == 0) {
@@ -139,8 +152,9 @@ static I compile_call(Cm *cm, const char *name, I line, I col) {
             line + 1, col + 1, name);
     return 0;
   }
+  I idx = add_sym(cm->chunk, name, word);
   chunk_emit_byte_with_line(cm->chunk, OP_DOWORD, line, col);
-  chunk_emit_sleb128(cm->chunk, (I)word->hash);
+  chunk_emit_sleb128(cm->chunk, idx);
   return 1;
 }
 

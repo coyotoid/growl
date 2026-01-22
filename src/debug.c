@@ -92,39 +92,17 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(FROMR);
     CASE(DOWORD) {
       Z bytes_read;
-      I hash = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("DOWORD");
-
-      if (dictionary && *dictionary) {
-        Dt *entry = lookup_hash(dictionary, hash);
-        if (entry != NULL) {
-          printf(" %s", entry->name);
-        } else {
-          printf(" ???");
-        }
-      } else {
-        printf(" 0x%lx", hash);
-      }
-      printf("\n");
+      I idx = decode_sleb128(&chunk->items[offset], &bytes_read);
+      Dt *word = chunk->symbols.items[idx].resolved;
+      printf("DOWORD %s\n", word->name);
       return offset + bytes_read;
     }
     SIMPLE(CALL);
     CASE(TAIL_DOWORD) {
       Z bytes_read;
-      I hash = decode_sleb128(&chunk->items[offset], &bytes_read);
-      printf("TAIL_DOWORD");
-
-      if (dictionary && *dictionary) {
-        Dt *entry = lookup_hash(dictionary, hash);
-        if (entry != NULL) {
-          printf(" %s", entry->name);
-        } else {
-          printf(" ???");
-        }
-      } else {
-        printf(" 0x%lx", hash);
-      }
-      printf("\n");
+      I idx = decode_sleb128(&chunk->items[offset], &bytes_read);
+      Dt *word = chunk->symbols.items[idx].resolved;
+      printf("TAIL_DOWORD %s\n", word->name);
       return offset + bytes_read;
     }
     SIMPLE(TAIL_CALL);

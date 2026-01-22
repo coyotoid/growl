@@ -1,7 +1,7 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
-#define CHUNK_DEBUG DEBUG
+#define CHUNK_DEBUG 0
 
 #include "common.h"
 #include "object.h"
@@ -11,6 +11,11 @@ typedef struct Bl {
   I row;
   I col;
 } Bl;
+
+typedef struct Bs {
+  const char *name;
+  struct Dt *resolved;
+} Bs;
 
 typedef struct Bc {
   I ref;
@@ -25,6 +30,10 @@ typedef struct Bc {
     Bl *items;
     Z count, capacity;
   } lines;
+  struct {
+    Bs *items;
+    Z count, capacity;
+  } symbols;
 } Bc;
 
 Bc *chunk_new(const char *);

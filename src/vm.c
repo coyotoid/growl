@@ -228,8 +228,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       break;
     }
     case OP_DOWORD: {
-      I hash = decode_sleb128(&vm->ip);
-      Dt *word = lookup_hash(&vm->dictionary, hash);
+      I idx = decode_sleb128(&vm->ip);
+      Dt *word = vm->chunk->symbols.items[idx].resolved;
       if (!word)
         vm_error(vm, VM_ERR_RUNTIME, "word not found");
       vm_rpush(vm, vm->chunk, vm->ip);
@@ -251,8 +251,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       break;
     }
     case OP_TAIL_DOWORD: {
-      I hash = decode_sleb128(&vm->ip);
-      Dt *word = lookup_hash(&vm->dictionary, hash);
+      I idx = decode_sleb128(&vm->ip);
+      Dt *word = vm->chunk->symbols.items[idx].resolved;
       if (!word)
         vm_error(vm, VM_ERR_RUNTIME, "word not found");
       vm->chunk = word->chunk;
