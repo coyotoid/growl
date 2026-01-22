@@ -1,0 +1,19 @@
+#load("std.grr")
+
+def fizzbuzz? { [3 % 0 =] [5 % 0 =] bi or }
+def fizz { when: 3 % 0 = ["Fizz" type]; }
+def buzz { when: 5 % 0 = ["Buzz" type]; }
+
+def fizzbuzz1 {
+  if: fizzbuzz?
+    [ [fizz] keep buzz "\n" type ]
+    [ . ];
+}
+
+def fizzbuzz {
+  0 swap times:
+    [ 1 + dup [fizzbuzz1] keep ];
+  drop
+}
+
+30 fizzbuzz

@@ -1,9 +1,12 @@
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "object.h"
-#include "string.h"
 #include "print.h"
+#include "string.h"
+#include "vendor/mpc.h"
 
 V print(O o) {
   if (o == NIL) {
@@ -18,7 +21,12 @@ V print(O o) {
       break;
     case OBJ_STR: {
       Str *s = string_unwrap(o);
-      printf("\"%.*s\"", (int)s->len, s->data);
+      char *escaped = malloc(s->len + 1);
+      memcpy(escaped, s->data, s->len);
+      escaped[s->len] = 0;
+      escaped = mpcf_escape(escaped);
+      printf("\"%s\"", escaped);
+      free(escaped);
       break;
     }
     default:

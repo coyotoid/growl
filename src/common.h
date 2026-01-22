@@ -1,4 +1,4 @@
-#ifndef COMMON_H
+  #ifndef COMMON_H
 #define COMMON_H
 
 #include <stdint.h>
@@ -12,5 +12,7 @@ typedef size_t    Z;
 typedef uint8_t   U8;
 typedef uint32_t  U32;
 typedef uint64_t  U64;
+
+#define DEBUG 0
 
 #endif

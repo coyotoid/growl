@@ -4,8 +4,12 @@
 #include "common.h"
 #include "object.h"
 
-#define GC_DEBUG 0
+#define GC_DEBUG 1
+#if GC_DEBUG
+#define HEAP_BYTES (8 * 1024)
+#else
 #define HEAP_BYTES (4 * 1024 * 1024)
+#endif
 
 typedef struct Gs {
   U8 *start, *end;

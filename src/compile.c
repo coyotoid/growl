@@ -7,8 +7,8 @@
 #include "debug.h"
 #include "gc.h"
 #include "object.h"
-#include "vm.h"
 #include "string.h"
+#include "vm.h"
 
 #include "vendor/mpc.h"
 
@@ -17,37 +17,43 @@ struct {
   const char *name;
   U8 opcode[8];
 } primitives[] = {
-  {"nil",  {OP_NIL, 0}},
-  {"dup",  {OP_DUP, 0}},
-  {"drop", {OP_DROP, 0}},
-  {"swap", {OP_SWAP, 0}},
-  {"over", {OP_OVER, 0}},
-  {"nip",  {OP_NIP, 0}},
-  {"bury", {OP_BURY, 0}},
-  {"dig",  {OP_DIG, 0}},
-  {">r",   {OP_TOR, 0}},
-  {"r>",   {OP_FROMR, 0}},
-  {"dip",  {OP_SWAP, OP_TOR, OP_CALL, OP_FROMR, 0}},
-  {"keep", {OP_OVER, OP_TOR, OP_CALL, OP_FROMR, 0}},
-  {"if",   {OP_CHOOSE, OP_CALL, 0}},
-  {"call", {OP_CALL, 0}},
-  {"?",    {OP_CHOOSE, 0}},
-  {"+",    {OP_ADD, 0}},
-  {"-",    {OP_SUB, 0}},
-  {"*",    {OP_MUL, 0}},
-  {"/",    {OP_DIV, 0}},
-  {"%",    {OP_MOD, 0}},
-  {"=",    {OP_EQ, 0}},
-  {"<>",   {OP_NEQ, 0}},
-  {"<",    {OP_LT, 0}},
-  {">",    {OP_GT, 0}},
-  {"<=",   {OP_LTE, 0}},
-  {">=",   {OP_GTE, 0}},
-  {"type", {OP_TYPE, 0}},
-  {"^",    {OP_CONCAT, 0}},
-  {".",    {OP_PPRINT, 0}},
-  {".s",   {OP_PRINTSTACK, 0}},
-  {NULL,   {0}},
+  {"nil",    {OP_NIL, 0}},
+  {"dup",    {OP_DUP, 0}},
+  {"drop",   {OP_DROP, 0}},
+  {"swap",   {OP_SWAP, 0}},
+  {"over",   {OP_OVER, 0}},
+  {"nip",    {OP_NIP, 0}},
+  {"bury",   {OP_BURY, 0}},
+  {"dig",    {OP_DIG, 0}},
+  {">r",     {OP_TOR, 0}},
+  {"r>",     {OP_FROMR, 0}},
+  {"dip",    {OP_SWAP, OP_TOR, OP_CALL, OP_FROMR, 0}},
+  {"keep",   {OP_OVER, OP_TOR, OP_CALL, OP_FROMR, 0}},
+  {"if",     {OP_CHOOSE, OP_CALL, 0}},
+  {"call",   {OP_CALL, 0}},
+  {"?",      {OP_CHOOSE, 0}},
+  {"+",      {OP_ADD, 0}},
+  {"-",      {OP_SUB, 0}},
+  {"*",      {OP_MUL, 0}},
+  {"/",      {OP_DIV, 0}},
+  {"%",      {OP_MOD, 0}},
+  {"logand", {OP_LOGAND, 0}},
+  {"logor",  {OP_LOGOR, 0}},
+  {"logxor", {OP_LOGXOR, 0}},
+  {"lognot", {OP_LOGNOT, 0}},
+  {"=",      {OP_EQ, 0}},
+  {"<>",     {OP_NEQ, 0}},
+  {"<",      {OP_LT, 0}},
+  {">",      {OP_GT, 0}},
+  {"<=",     {OP_LTE, 0}},
+  {">=",     {OP_GTE, 0}},
+  {"and",    {OP_AND, 0}},
+  {"or",     {OP_OR, 0}},
+  {"type",   {OP_TYPE, 0}},
+  {"^",      {OP_CONCAT, 0}},
+  {".",      {OP_PPRINT, 0}},
+  {".s",     {OP_PRINTSTACK, 0}},
+  {NULL,     {0}},
 };
 // clang-format on
 
@@ -198,6 +204,7 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
 static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   Cm inner = {0};
   inner.arena = cm->arena;
+
   inner.chunk = chunk_new("<quotation>");
   inner.vm = cm->vm;
   inner.dictionary = cm->dictionary;
@@ -214,7 +221,8 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
     }
     curr = mpc_ast_traverse_next(next);
   }
-  chunk_emit_byte(inner.chunk, OP_RETURN);
+  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, curr->state.row,
+                            curr->state.col);
   optim_tailcall(inner.chunk);
 
   Hd *hd = gc_alloc(cm->vm, sizeof(Hd) + sizeof(Bc *));
@@ -228,6 +236,94 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
 static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next,
                            I line, I col) {
   return compile_constant(cm, compile_quotation_obj(cm, curr, next), line, col);
+}
+
+static I compile_pragma(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+  (void)mpc_ast_traverse_next(next);
+  curr = mpc_ast_traverse_next(next);
+  const char *name = curr->contents;
+  I line = curr->state.row;
+  I col = curr->state.col;
+  curr = mpc_ast_traverse_next(next);
+  I has_args = 0;
+
+  if (curr != NULL && strcmp(curr->tag, "char") == 0 &&
+      strcmp(curr->contents, "(") == 0) {
+    has_args = 1;
+    curr = mpc_ast_traverse_next(next); // Skip '('
+  }
+
+  if (strcmp(name, "load") == 0) {
+    if (!has_args) {
+      fprintf(stderr,
+              "compiler error at %ld:%ld: #load requires a filename argument\n",
+              line + 1, col + 1);
+      return 0;
+    }
+    if (!strstr(curr->tag, "expr|string")) {
+      fprintf(stderr,
+              "compiler error at %ld:%ld: #load requires a string argument\n",
+              line + 1, col + 1);
+      return 0;
+    }
+
+    char *fname_raw = curr->contents;
+    Z len = strlen(fname_raw);
+    char *fname = malloc(len + 1);
+    memcpy(fname, fname_raw + 1, len - 2);
+    fname[len - 2] = '\0';
+    fname = mpcf_unescape(fname);
+
+    mpc_result_t res;
+    extern mpc_parser_t *Program;
+
+    if (!mpc_parse_contents(fname, Program, &res)) {
+      fprintf(stderr, "compiler error at %ld:%ld: failed to parse file '%s':\n",
+              line + 1, col + 1, fname);
+      mpc_err_print_to(res.error, stderr);
+      mpc_err_delete(res.error);
+      free(fname);
+      return 0;
+    }
+
+    mpc_ast_trav_t *inner_next =
+        mpc_ast_traverse_start(res.output, mpc_ast_trav_order_pre);
+    mpc_ast_t *inner_curr = mpc_ast_traverse_next(&inner_next);
+
+    I success = compile_ast(cm, inner_curr, &inner_next);
+
+    mpc_ast_delete(res.output);
+
+    if (!success) {
+      fprintf(stderr,
+              "compiler error at %ld:%ld: failed to compile file '%s'\n",
+              line + 1, col + 1, fname);
+      free(fname);
+      return 0;
+    }
+
+    free(fname);
+
+    curr = mpc_ast_traverse_next(next);
+    while (curr != NULL) {
+      if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, ")") == 0)
+        break;
+      curr = mpc_ast_traverse_next(next);
+    }
+  } else {
+    fprintf(stderr, "compiler warning at %ld:%ld: unknown pragma \"%s\"\n",
+            line + 1, col + 1, name);
+  }
+
+  if (has_args) {
+    if (curr == NULL || strcmp(curr->contents, ")") != 0) {
+      fprintf(stderr, "error at %ld:%ld: expected ')' after pragma arguments\n",
+              line + 1, col + 1);
+      return 0;
+    }
+  }
+
+  return 1;
 }
 
 static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
@@ -252,6 +348,8 @@ static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
     return compile_definition(cm, curr, next);
   } else if (strstr(curr->tag, "expr|command") != NULL) {
     return compile_command(cm, curr, next);
+  } else if (strstr(curr->tag, "expr|pragma") != NULL) {
+    return compile_pragma(cm, curr, next);
   } else if (strstr(curr->tag, "expr|comment") != NULL) {
     return 1;
   } else {
@@ -259,8 +357,6 @@ static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
             col + 1, curr->tag);
     return 0;
   }
-
-  return 1;
 }
 
 static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {

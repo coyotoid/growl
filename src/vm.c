@@ -49,10 +49,29 @@ V vm_init(Vm *vm) {
 }
 
 V vm_deinit(Vm *vm) {
-  gc_collect(vm);
-  gc_deinit(&vm->gc);
+  // Free all definitions
+  Dt *dstack[256];
+  Dt **dsp = dstack;
+  *dsp++ = vm->dictionary;
+
+  while (dsp > dstack) {
+    Dt *node = *--dsp;
+    if (!node)
+      continue;
+    if (node->chunk != NULL)
+      chunk_release(node->chunk);
+    for (I i = 0; i < 4; i++) {
+      if (node->child[i] != NULL)
+        *dsp++ = node->child[i];
+    }
+  }
+
   arena_free(&vm->arena);
   vm->dictionary = NULL;
+
+  // Run final GC pass
+  gc_collect(vm);
+  gc_deinit(&vm->gc);
 }
 
 static V vm_error(Vm *vm, I error, const char *message) {
@@ -116,7 +135,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     O b = vm_pop(vm);                                                          \
     O a = vm_pop(vm);                                                          \
     if (!IMM(a) || !IMM(b))                                                    \
-      vm_error(vm, VM_ERR_TYPE, "arithmetic on non-numeric objects");          \
+      vm_error(vm, VM_ERR_TYPE, "numop on non-numeric objects");               \
     vm_push(vm, NUM(ORD(a) op ORD(b)));                                        \
     break;                                                                     \
   }
@@ -282,6 +301,19 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       BINOP(/);
     case OP_MOD:
       BINOP(%);
+    case OP_LOGAND:
+      BINOP(&);
+    case OP_LOGOR:
+      BINOP(|);
+    case OP_LOGXOR:
+      BINOP(^);
+    case OP_LOGNOT: {
+      O o = vm_pop(vm);
+      if (!IMM(o))
+        vm_error(vm, VM_ERR_TYPE, "numop on non-number");
+      vm_push(vm, NUM(~ORD(o)));
+      break;
+    }
     case OP_EQ:
       CMPOP(==);
     case OP_NEQ:
@@ -294,12 +326,32 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       CMPOP(<=);
     case OP_GTE:
       CMPOP(>=);
+    case OP_AND: {
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      if (a == NIL) {
+        vm_push(vm, NIL);
+      } else {
+        vm_push(vm, b);
+      }
+      break;
+    }
+    case OP_OR: {
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      if (a == NIL) {
+        vm_push(vm, b);
+      } else {
+        vm_push(vm, a);
+      }
+      break;
+    }
     case OP_CONCAT: {
-      Str *b = string_unwrap(vm_pop(vm));
-      if (b == NULL)
+      O b = vm_pop(vm);
+      if (type(b) != TYPE_STR)
         vm_error(vm, VM_ERR_TYPE, "expected string");
-      Str *a = string_unwrap(vm_pop(vm));
-      if (a == NULL)
+      O a = vm_pop(vm);
+      if (type(a) != TYPE_STR)
         vm_error(vm, VM_ERR_TYPE, "expected string");
       vm_push(vm, string_concat(vm, a, b));
       break;

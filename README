@@ -11,5 +11,5 @@
 <__________\______)\__)
 
 TODO:
-- [ ] "#load" pragma
+- [o] "#load" pragma
 - [ ] hand-rolled parser

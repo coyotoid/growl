@@ -36,9 +36,8 @@ V disassemble(Bc *chunk, const char *name, Dt **dictionary) {
 }
 
 static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
-  for (I i = 0; i < indent * 2; i++)
-    putchar(' ');
-  fflush(stdout);
+  for (I i = 0; i < indent; i++)
+    printf("  ");
   printf("%04zu ", offset);
 
   I col = -1;
@@ -136,12 +135,18 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(MUL);
     SIMPLE(DIV);
     SIMPLE(MOD);
+    SIMPLE(LOGAND);
+    SIMPLE(LOGOR);
+    SIMPLE(LOGXOR);
+    SIMPLE(LOGNOT);
     SIMPLE(EQ);
     SIMPLE(NEQ);
     SIMPLE(LT);
     SIMPLE(GT);
     SIMPLE(LTE);
     SIMPLE(GTE);
+    SIMPLE(AND);
+    SIMPLE(OR);
     SIMPLE(TYPE);
     SIMPLE(CONCAT);
     SIMPLE(PPRINT);

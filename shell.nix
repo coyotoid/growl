@@ -12,6 +12,7 @@ pkgs.mkShell {
     ninja
     rlwrap
     hyperfine
+    valgrind
     muon
     samurai
   ];

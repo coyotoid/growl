@@ -1,7 +1,7 @@
 #ifndef CHUNK_H
 #define CHUNK_H
 
-#define CHUNK_DEBUG 0
+#define CHUNK_DEBUG DEBUG
 
 #include "common.h"
 #include "object.h"

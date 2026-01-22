@@ -1,0 +1,11 @@
+def when { [] if }
+def unless { swap when }
+
+def bi { [keep] dip call }
+def tri { [[keep] dip keep] dip call }
+
+def times {
+  if: over 0 =
+    [drop drop]
+    [swap over >r >r call r> 1 - r> times];
+}

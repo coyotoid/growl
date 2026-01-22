@@ -101,6 +101,8 @@ V gc_collect(Vm *vm) {
     Hd *hdr = (Hd *)scan;
     switch (hdr->type) {
       // TODO: the rest of the owl
+    case OBJ_STR:
+      break;
     case OBJ_QUOT: {
       Bc **chunk_ptr = (Bc **)(hdr + 1);
       Bc *chunk = *chunk_ptr;

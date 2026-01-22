@@ -10,4 +10,4 @@ typedef struct Str {
 
 O string_make(Vm *, const char *, I);
 Str *string_unwrap(O);
-O string_concat(Vm *, Str *, Str *);
+O string_concat(Vm *, O, O);

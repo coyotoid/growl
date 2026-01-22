@@ -14,7 +14,7 @@
 enum {
   OP_NOP = 0,
   OP_CONST, // Push constant to stack
-  OP_NIL, // Push constant to stack
+  OP_NIL,   // Push constant to stack
   OP_DROP,
   OP_DUP,
   OP_SWAP,
@@ -22,12 +22,12 @@ enum {
   OP_OVER,
   OP_BURY,
   OP_DIG,
-  OP_TOR,         // Push from stack to retain stack
-  OP_FROMR,       // Push from retain stack to stack
+  OP_TOR,    // Push from stack to retain stack
+  OP_FROMR,  // Push from retain stack to stack
   OP_DOWORD, // Call word from dictionary by name hash
   OP_CALL,
   OP_TAIL_DOWORD, // Tail call to dictionary word (reuses current frame)
-  OP_TAIL_CALL,  // Tail call to quotation (reuses current frame)
+  OP_TAIL_CALL,   // Tail call to quotation (reuses current frame)
   OP_RETURN,
   OP_CHOOSE,
   OP_ADD,
@@ -37,10 +37,16 @@ enum {
   OP_MOD,
   OP_EQ,
   OP_NEQ,
+  OP_LOGAND,
+  OP_LOGOR,
+  OP_LOGXOR,
+  OP_LOGNOT,
   OP_LT,
   OP_GT,
   OP_LTE,
   OP_GTE,
+  OP_AND,
+  OP_OR,
   OP_TYPE,
   OP_CONCAT,
   OP_PPRINT,
