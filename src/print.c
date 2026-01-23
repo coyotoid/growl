@@ -21,6 +21,7 @@ V print(O o) {
       printf("<quotation>");
       break;
     case OBJ_STR: {
+      // TODO: make this binary safe
       Str *s = string_unwrap(o);
       char *escaped = malloc(s->len + 1);
       memcpy(escaped, s->data, s->len);

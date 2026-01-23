@@ -28,9 +28,11 @@ static I prim_printstack(Vm *vm) {
 Pr primitives_table[] = {
   {".", prim_pprint},
   {".s", prim_printstack},
+  {"stdin", prim_file_stdin},
   {"stdout", prim_file_stdout},
   {"stderr", prim_file_stderr},
   {"fprint", prim_file_fprint},
+  {"fgetline", prim_file_fgetline},
   {NULL, NULL},
 };
 // clang-format on

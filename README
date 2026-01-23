@@ -12,4 +12,5 @@
 
 TODO:
 - [o] "#load" pragma
+- [o  better dip/keep (avoid using the retain stack for them)
 - [ ] hand-rolled parser

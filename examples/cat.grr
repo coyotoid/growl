@@ -1,0 +1,11 @@
+#load("std.grr")
+
+def while {
+  swap dup bury >r >r
+  if: call dup
+    [r> dup >r call r> r> swap while]
+    [drop r> drop r> drop];
+}
+
+while: [stdin fgetline]
+  [print];
