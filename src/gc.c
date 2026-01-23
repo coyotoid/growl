@@ -101,7 +101,6 @@ V gc_collect(Vm *vm) {
     }
     Hd *hdr = (Hd *)scan;
     switch (hdr->type) {
-      // TODO: the rest of the owl
     case OBJ_STR:
       break;
     case OBJ_QUOT: {
@@ -111,6 +110,18 @@ V gc_collect(Vm *vm) {
         chunk->constants.items[i] = forward(gc, chunk->constants.items[i]);
       break;
     }
+    case OBJ_COMPOSE: {
+      Qo *comp = (Qo *)(hdr + 1);
+      comp->first = forward(gc, comp->first);
+      comp->second = forward(gc, comp->second);
+      break;
+    };
+    case OBJ_CURRY: {
+      Qc *curry = (Qc *)(hdr + 1);
+      curry->value = forward(gc, curry->value);
+      curry->callable = forward(gc, curry->callable);
+      break;
+    };
     case OBJ_USERDATA:
       break;
     case OBJ_FWD:

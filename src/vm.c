@@ -272,6 +272,13 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         quot = comp->first;
         goto do_call;
       }
+      case TYPE_CURRY: {
+        Qc *curry = (Qc *)(UNBOX(quot) + 1);
+        vm_push(vm, curry->value);
+        quot = curry->callable;
+        goto do_call;
+        break;
+      }
       default:
         vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object");
       }
@@ -304,6 +311,13 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
         quot = comp->first;
         goto do_tail_call;
       }
+      case TYPE_CURRY: {
+        Qc *curry = (Qc *)(UNBOX(quot) + 1);
+        vm_push(vm, curry->value);
+        quot = curry->callable;
+        goto do_tail_call;
+        break;
+      }
       default:
         vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object");
       }
@@ -319,22 +333,36 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     }
     case OP_COMPOSE: {
       I mark = gc_mark(&vm->gc);
-      O q2 = vm_pop(vm);
-      O q1 = vm_pop(vm);
-      gc_addroot(&vm->gc, &q1);
-      gc_addroot(&vm->gc, &q2);
-      if (!callable(q1) || !callable(q2))
+      O c1 = vm_pop(vm);
+      O c2 = vm_pop(vm);
+      gc_addroot(&vm->gc, &c2);
+      gc_addroot(&vm->gc, &c1);
+      if (!callable(c2) || !callable(c1))
         vm_error(vm, VM_ERR_TYPE, "non-callable arguments to compose");
       Hd *hd = gc_alloc(vm, sizeof(Hd) + sizeof(Qo));
       hd->type = OBJ_COMPOSE;
       Qo *comp = (Qo *)(hd + 1);
-      comp->first = q1;
-      comp->second = q2;
+      comp->first = c2;
+      comp->second = c1;
       vm_push(vm, BOX(hd));
       gc_reset(&vm->gc, mark);
       break;
     }
     case OP_CURRY: {
+      I mark = gc_mark(&vm->gc);
+      O cble = vm_pop(vm);
+      O value = vm_pop(vm);
+      gc_addroot(&vm->gc, &cble);
+      gc_addroot(&vm->gc, &value);
+      if (!callable(cble))
+        vm_error(vm, VM_ERR_TYPE, "non-callable argument to curry");
+      Hd *hd = gc_alloc(vm, sizeof(Hd) + sizeof(Qc));
+      hd->type = OBJ_CURRY;
+      Qc *curry = (Qc *)(hd + 1);
+      curry->value = value;
+      curry->callable = cble;
+      vm_push(vm, BOX(hd));
+      gc_reset(&vm->gc, mark);
       break;
     }
     case OP_RETURN:
