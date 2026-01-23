@@ -32,7 +32,7 @@ V gc_deinit(Gc *);
 
 typedef struct Vm Vm;
 
-V gc_collect(Vm *);
+V gc_collect(Vm *, I);
 Hd *gc_alloc(Vm *, Z);
 
 #endif

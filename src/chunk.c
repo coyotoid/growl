@@ -32,8 +32,9 @@ V chunk_release(Bc *chunk) {
 #if CHUNK_DEBUG
     fprintf(stderr, "DEBUG: freeing chunk %s at %p\n", chunk->name, (V *)chunk);
 #endif
-    yar_free(&chunk->lines);
     yar_free(&chunk->constants);
+    yar_free(&chunk->lines);
+    yar_free(&chunk->symbols);
     yar_free(chunk);
     free(chunk);
   }

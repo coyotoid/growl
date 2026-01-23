@@ -23,12 +23,17 @@ struct {
   {"dup",     {OP_DUP, 0}},
   {"drop",    {OP_DROP, 0}},
   {"swap",    {OP_SWAP, 0}},
+  {"2dup",    {OP_2DUP, 0}},
+  {"2drop",   {OP_2DROP, 0}},
+  {"2swap",   {OP_2SWAP, 0}},
   {"over",    {OP_OVER, 0}},
   {"nip",     {OP_NIP, 0}},
   {"bury",    {OP_BURY, 0}},
   {"dig",     {OP_DIG, 0}},
   {">r",      {OP_TOR, 0}},
   {"r>",      {OP_FROMR, 0}},
+  {"2>r",     {OP_2TOR, 0}},
+  {"2r>",     {OP_2FROMR, 0}},
   {"if",      {OP_CHOOSE, OP_CALL, 0}},
   {"call",    {OP_CALL, 0}},
   {"compose", {OP_COMPOSE, 0}},
@@ -395,6 +400,8 @@ static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
 }
 
 Bc *compile_program(Cm *cm, mpc_ast_t *ast) {
+  mpc_ast_print_to(ast, stderr);
+
   mpc_ast_trav_t *next = mpc_ast_traverse_start(ast, mpc_ast_trav_order_pre);
   mpc_ast_t *curr = mpc_ast_traverse_next(&next); // Begin traversal
 

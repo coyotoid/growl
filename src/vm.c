@@ -90,7 +90,7 @@ V vm_deinit(Vm *vm) {
   vm->dictionary = NULL;
 
   // Run final GC pass
-  gc_collect(vm);
+  gc_collect(vm, 1);
   gc_deinit(&vm->gc);
 }
 
@@ -191,15 +191,40 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       (void)vm_pop(vm);
       break;
     }
+    case OP_2DROP: {
+      (void)vm_pop(vm);
+      (void)vm_pop(vm);
+      break;
+    }
     case OP_DUP: {
       O obj = vm_pop(vm);
       vm_push(vm, obj);
       vm_push(vm, obj);
       break;
     }
+    case OP_2DUP: {
+      O obj2 = vm_pop(vm);
+      O obj1 = vm_pop(vm);
+      vm_push(vm, obj1);
+      vm_push(vm, obj1);
+      vm_push(vm, obj2);
+      vm_push(vm, obj2);
+      break;
+    }
     case OP_SWAP: {
       O b = vm_pop(vm);
       O a = vm_pop(vm);
+      vm_push(vm, b);
+      vm_push(vm, a);
+      break;
+    }
+    case OP_2SWAP: {
+      O d = vm_pop(vm);
+      O c = vm_pop(vm);
+      O b = vm_pop(vm);
+      O a = vm_pop(vm);
+      vm_push(vm, d);
+      vm_push(vm, c);
       vm_push(vm, b);
       vm_push(vm, a);
       break;
@@ -244,8 +269,22 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_tpush(vm, vm_pop(vm));
       break;
     }
+    case OP_2TOR: {
+      O obj2 = vm_pop(vm);
+      O obj1 = vm_pop(vm);
+      vm_tpush(vm, obj1);
+      vm_tpush(vm, obj2);
+      break;
+    }
     case OP_FROMR: {
       vm_push(vm, vm_tpop(vm));
+      break;
+    }
+    case OP_2FROMR: {
+      O obj2 = vm_tpop(vm);
+      O obj1 = vm_tpop(vm);
+      vm_push(vm, obj1);
+      vm_push(vm, obj2);
       break;
     }
     case OP_DOWORD: {

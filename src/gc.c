@@ -60,7 +60,7 @@ static V printstats(Gc *gc, const char *label) {
 }
 #endif
 
-V gc_collect(Vm *vm) {
+V gc_collect(Vm *vm, I final) {
   Gc *gc = &vm->gc;
   uint8_t *scan = gc->to.free;
 
@@ -68,29 +68,32 @@ V gc_collect(Vm *vm) {
   printstats(gc, "before GC");
 #endif
 
-  for (Z i = 0; i < gc->roots.count; i++) {
-    O *o = gc->roots.items[i];
-    *o = forward(gc, *o);
-  }
-
-  Dt *dstack[256];
-  Dt **dsp = dstack;
-  *dsp++ = vm->dictionary;
-
-  // Forward constants referenced by dictionary entries
-  while (dsp > dstack) {
-    Dt *node = *--dsp;
-    if (!node)
-      continue;
-    if (node->chunk != NULL) {
-      for (Z i = 0; i < node->chunk->constants.count; i++) {
-        node->chunk->constants.items[i] =
-            forward(gc, node->chunk->constants.items[i]);
-      }
+  if (!final) {
+    // Final GC ignores roots.
+    for (Z i = 0; i < gc->roots.count; i++) {
+      O *o = gc->roots.items[i];
+      *o = forward(gc, *o);
     }
-    for (I i = 0; i < 4; i++) {
-      if (node->child[i] != NULL)
-        *dsp++ = node->child[i];
+
+    Dt *dstack[256];
+    Dt **dsp = dstack;
+    *dsp++ = vm->dictionary;
+
+    // Forward constants referenced by dictionary entries
+    while (dsp > dstack) {
+      Dt *node = *--dsp;
+      if (!node)
+        continue;
+      if (node->chunk != NULL) {
+        for (Z i = 0; i < node->chunk->constants.count; i++) {
+          node->chunk->constants.items[i] =
+              forward(gc, node->chunk->constants.items[i]);
+        }
+      }
+      for (I i = 0; i < 4; i++) {
+        if (node->child[i] != NULL)
+          *dsp++ = node->child[i];
+      }
     }
   }
 
@@ -170,7 +173,7 @@ Hd *gc_alloc(Vm *vm, Z sz) {
   Gc *gc = &vm->gc;
   sz = ALIGN(sz);
   if (gc->from.free + sz > gc->from.end) {
-    gc_collect(vm);
+    gc_collect(vm, 0);
     if (gc->from.free + sz > gc->from.end) {
       fprintf(stderr, "out of memory (requested %" PRIdPTR "bytes\n", sz);
       abort();

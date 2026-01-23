@@ -9,7 +9,12 @@ def when { [] if }
 def unless { swap when }
 
 def dip { swap [] curry compose call }
+def 2dip { swap [dip] dip }
+def 3dip { swap [2dip] dip }
+
 def keep { over [call] dip }
+def 2keep { [2dup] dip 2dip }
+
 def bi { [keep] dip call }
 def tri { [[keep] dip keep] dip call }
 
@@ -17,4 +22,11 @@ def times {
   if: over 0 =
     [drop drop]
     [swap over >r >r call r> 1 - r> times];
+}
+
+def while {
+  swap dup bury >r >r
+  if: call dup
+    [r> dup >r call r> r> swap while]
+    [drop r> drop r> drop];
 }
