@@ -51,6 +51,7 @@ enum {
   OP_AND,
   OP_OR,
   OP_CONCAT,
+  OP_CALL_NEXT,
 };
 
 #define STACK_SIZE 256
@@ -58,6 +59,7 @@ enum {
 typedef struct Fr {
   Bc *chunk;
   U8 *ip;
+  O obj;
 } Fr;
 
 typedef struct Vm {
@@ -71,6 +73,7 @@ typedef struct Vm {
   Ar arena;
   jmp_buf error;
   Bc *trampoline;
+  O next_call;
 
   // These objects need to stay as roots!
   O stdin, stdout, stderr;

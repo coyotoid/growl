@@ -45,13 +45,17 @@ V vm_init(Vm *vm) {
   for (Z i = 0; i < STACK_SIZE; i++) {
     vm->stack[i] = NIL;
     vm->tstack[i] = NIL;
+    vm->rstack[i].obj = NIL;
     gc_addroot(&vm->gc, &vm->stack[i]);
     gc_addroot(&vm->gc, &vm->tstack[i]);
+    gc_addroot(&vm->gc, &vm->rstack[i].obj);
   }
 
+  vm->next_call = NIL;
+  gc_addroot(&vm->gc, &vm->next_call);
+
   vm->trampoline = chunk_new("<trampoline>");
-  chunk_emit_byte(vm->trampoline, OP_FROMR);
-  chunk_emit_byte(vm->trampoline, OP_TAIL_CALL);
+  chunk_emit_byte(vm->trampoline, OP_CALL_NEXT);
 
   vm->stdin = userdata_make(vm, (void *)stdin, &userdata_file);
   vm->stdout = userdata_make(vm, (void *)stdout, &userdata_file);
@@ -128,6 +132,7 @@ V vm_rpush(Vm *vm, Bc *chunk, U8 *ip) {
     vm_error(vm, VM_ERR_STACK_OVERFLOW, "return stack overflow");
   vm->rsp->chunk = chunk;
   vm->rsp->ip = ip;
+  vm->rsp->obj = NIL;
   vm->rsp++;
 }
 Fr vm_rpop(Vm *vm) {
@@ -268,7 +273,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       case TYPE_COMPOSE: {
         Qo *comp = (Qo *)(UNBOX(quot) + 1);
         vm_rpush(vm, vm->trampoline, vm->trampoline->items);
-        vm_tpush(vm, comp->second);
+        vm->rsp[-1].obj = comp->second;
         quot = comp->first;
         goto do_call;
       }
@@ -293,6 +298,10 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm->ip = word->chunk->items;
       break;
     }
+    case OP_CALL_NEXT:
+      vm_push(vm, vm->next_call);
+      vm->next_call = NIL;
+      // fallthrough
     case OP_TAIL_CALL: {
       O quot = vm_pop(vm);
     do_tail_call:
@@ -307,7 +316,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       case TYPE_COMPOSE: {
         Qo *comp = (Qo *)(UNBOX(quot) + 1);
         vm_rpush(vm, vm->trampoline, vm->trampoline->items);
-        vm_tpush(vm, comp->second);
+        vm->rsp[-1].obj = comp->second;
         quot = comp->first;
         goto do_tail_call;
       }
@@ -368,6 +377,7 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     case OP_RETURN:
       if (vm->rsp != vm->rstack) {
         Fr frame = vm_rpop(vm);
+        vm->next_call = frame.obj;
         vm->chunk = frame.chunk;
         vm->ip = frame.ip;
       } else {

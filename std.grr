@@ -8,6 +8,8 @@ def eprintln { stderr fprint "\n" stderr fprint }
 def when { [] if }
 def unless { swap when }
 
+def dip { swap [] curry compose call }
+def keep { over [call] dip }
 def bi { [keep] dip call }
 def tri { [[keep] dip keep] dip call }
 

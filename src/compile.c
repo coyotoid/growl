@@ -29,8 +29,6 @@ struct {
   {"dig",     {OP_DIG, 0}},
   {">r",      {OP_TOR, 0}},
   {"r>",      {OP_FROMR, 0}},
-  {"dip",     {OP_SWAP, OP_TOR, OP_CALL, OP_FROMR, 0}},
-  {"keep",    {OP_OVER, OP_TOR, OP_CALL, OP_FROMR, 0}},
   {"if",      {OP_CHOOSE, OP_CALL, 0}},
   {"call",    {OP_CALL, 0}},
   {"compose", {OP_COMPOSE, 0}},
