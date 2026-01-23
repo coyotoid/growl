@@ -7,8 +7,9 @@
 #include "dictionary.h"
 #include "gc.h"
 #include "object.h"
-#include "print.h"
-#include "src/primitive.h"
+#include "primitive.h"
+#include "userdata.h"
+#include "file.h"
 #include "string.h"
 #include "vm.h"
 
@@ -47,6 +48,14 @@ V vm_init(Vm *vm) {
     gc_addroot(&vm->gc, &vm->stack[i]);
     gc_addroot(&vm->gc, &vm->tstack[i]);
   }
+
+  vm->stdin = userdata_make(vm, (void *)stdin, &userdata_file);
+  vm->stdout = userdata_make(vm, (void *)stdout, &userdata_file);
+  vm->stderr = userdata_make(vm, (void *)stderr, &userdata_file);
+
+  gc_addroot(&vm->gc, &vm->stdin);
+  gc_addroot(&vm->gc, &vm->stdout);
+  gc_addroot(&vm->gc, &vm->stderr);
 }
 
 V vm_deinit(Vm *vm) {

@@ -14,18 +14,12 @@ Ut userdata_file = {
 // clang-format on
 
 I prim_file_stdout(Vm *vm) {
-  static O stdout_object = NIL;
-  if (stdout_object == NIL)
-    stdout_object = userdata_make(vm, (void *)stdout, &userdata_file);
-  vm_push(vm, stdout_object);
+  vm_push(vm, vm->stdout);
   return 0;
 }
 
 I prim_file_stderr(Vm *vm) {
-  static O stderr_object = NIL;
-  if (stderr_object == NIL)
-    stderr_object = userdata_make(vm, (void *)stderr, &userdata_file);
-  vm_push(vm, stderr_object);
+  vm_push(vm, vm->stderr);
   return 0;
 }
 

@@ -68,6 +68,9 @@ typedef struct Vm {
   Dt *dictionary;
   Ar arena;
   jmp_buf error;
+
+  // These objects need to stay as roots!
+  O stdin, stdout, stderr;
 } Vm;
 
 enum {
