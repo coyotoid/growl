@@ -29,6 +29,8 @@ enum {
   OP_TAIL_DOWORD, // Tail call to dictionary word (reuses current frame)
   OP_TAIL_CALL,   // Tail call to quotation (reuses current frame)
   OP_PRIM,
+  OP_COMPOSE,
+  OP_CURRY,
   OP_RETURN,
   OP_CHOOSE,
   OP_ADD,
@@ -68,6 +70,7 @@ typedef struct Vm {
   Dt *dictionary;
   Ar arena;
   jmp_buf error;
+  Bc *trampoline;
 
   // These objects need to stay as roots!
   O stdin, stdout, stderr;

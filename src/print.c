@@ -20,6 +20,12 @@ V print(O o) {
     case OBJ_QUOT:
       printf("<quotation>");
       break;
+    case OBJ_COMPOSE:
+      printf("<composed>");
+      break;
+    case OBJ_CURRY:
+      printf("<curried>");
+      break;
     case OBJ_STR: {
       // TODO: make this binary safe
       Str *s = string_unwrap(o);

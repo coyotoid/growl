@@ -5,12 +5,12 @@
 #include "chunk.h"
 #include "compile.h"
 #include "dictionary.h"
+#include "file.h"
 #include "gc.h"
 #include "object.h"
 #include "primitive.h"
-#include "userdata.h"
-#include "file.h"
 #include "string.h"
+#include "userdata.h"
 #include "vm.h"
 
 static I decode_sleb128(U8 **ptr) {
@@ -49,6 +49,10 @@ V vm_init(Vm *vm) {
     gc_addroot(&vm->gc, &vm->tstack[i]);
   }
 
+  vm->trampoline = chunk_new("<trampoline>");
+  chunk_emit_byte(vm->trampoline, OP_FROMR);
+  chunk_emit_byte(vm->trampoline, OP_TAIL_CALL);
+
   vm->stdin = userdata_make(vm, (void *)stdin, &userdata_file);
   vm->stdout = userdata_make(vm, (void *)stdout, &userdata_file);
   vm->stderr = userdata_make(vm, (void *)stderr, &userdata_file);
@@ -59,6 +63,8 @@ V vm_init(Vm *vm) {
 }
 
 V vm_deinit(Vm *vm) {
+  chunk_release(vm->trampoline);
+
   // Free all definitions
   Dt *dstack[256];
   Dt **dsp = dstack;
@@ -249,13 +255,24 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     }
     case OP_CALL: {
       O quot = vm_pop(vm);
-      if (type(quot) == TYPE_QUOT) {
+      vm_rpush(vm, vm->chunk, vm->ip);
+    do_call:
+      switch (type(quot)) {
+      case TYPE_QUOT: {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
-        vm_rpush(vm, vm->chunk, vm->ip);
         vm->chunk = chunk;
         vm->ip = chunk->items;
-      } else {
+        break;
+      }
+      case TYPE_COMPOSE: {
+        Qo *comp = (Qo *)(UNBOX(quot) + 1);
+        vm_rpush(vm, vm->trampoline, vm->trampoline->items);
+        vm_tpush(vm, comp->second);
+        quot = comp->first;
+        goto do_call;
+      }
+      default:
         vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object");
       }
       break;
@@ -271,13 +288,24 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     }
     case OP_TAIL_CALL: {
       O quot = vm_pop(vm);
-      if (type(quot) == TYPE_QUOT) {
+    do_tail_call:
+      switch (type(quot)) {
+      case TYPE_QUOT: {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
         vm->chunk = chunk;
         vm->ip = chunk->items;
-      } else {
-        vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object\n");
+        break;
+      }
+      case TYPE_COMPOSE: {
+        Qo *comp = (Qo *)(UNBOX(quot) + 1);
+        vm_rpush(vm, vm->trampoline, vm->trampoline->items);
+        vm_tpush(vm, comp->second);
+        quot = comp->first;
+        goto do_tail_call;
+      }
+      default:
+        vm_error(vm, VM_ERR_TYPE, "attempt to call non-quotation object");
       }
       break;
     }
@@ -287,6 +315,26 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       I err = prim.fn(vm);
       if (err != 0)
         vm_error(vm, err, "primitive call failed");
+      break;
+    }
+    case OP_COMPOSE: {
+      I mark = gc_mark(&vm->gc);
+      O q2 = vm_pop(vm);
+      O q1 = vm_pop(vm);
+      gc_addroot(&vm->gc, &q1);
+      gc_addroot(&vm->gc, &q2);
+      if (!callable(q1) || !callable(q2))
+        vm_error(vm, VM_ERR_TYPE, "non-callable arguments to compose");
+      Hd *hd = gc_alloc(vm, sizeof(Hd) + sizeof(Qo));
+      hd->type = OBJ_COMPOSE;
+      Qo *comp = (Qo *)(hd + 1);
+      comp->first = q1;
+      comp->second = q2;
+      vm_push(vm, BOX(hd));
+      gc_reset(&vm->gc, mark);
+      break;
+    }
+    case OP_CURRY: {
       break;
     }
     case OP_RETURN:

@@ -114,6 +114,8 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
       printf("PRIM \"%s\"\n", prim.name);
       return offset + bytes_read;
     }
+    SIMPLE(COMPOSE);
+    SIMPLE(CURRY);
     SIMPLE(RETURN);
     SIMPLE(CHOOSE);
     SIMPLE(ADD);

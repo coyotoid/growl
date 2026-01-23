@@ -33,6 +33,7 @@ struct {
   {"keep",   {OP_OVER, OP_TOR, OP_CALL, OP_FROMR, 0}},
   {"if",     {OP_CHOOSE, OP_CALL, 0}},
   {"call",   {OP_CALL, 0}},
+  {"compose",{OP_COMPOSE, 0}},
   {"?",      {OP_CHOOSE, 0}},
   {"+",      {OP_ADD, 0}},
   {"-",      {OP_SUB, 0}},
