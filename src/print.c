@@ -6,6 +6,7 @@
 #include "object.h"
 #include "print.h"
 #include "string.h"
+#include "userdata.h"
 #include "vendor/mpc.h"
 
 V print(O o) {
@@ -29,8 +30,13 @@ V print(O o) {
       free(escaped);
       break;
     }
+    case OBJ_USERDATA: {
+      Ud *ud = (Ud *)(hdr + 1);
+      printf("<#userdata %s@%p>", ud->kind->name, ud->data);
+      break;
+    }
     default:
-      printf("<obj type=%ld ptr=%p>", type(o), (void *)o);
+      printf("<#obj type=%ld ptr=%p>", type(o), (void *)o);
     }
   }
 }

@@ -6,6 +6,7 @@
 #include "chunk.h"
 #include "gc.h"
 #include "object.h"
+#include "userdata.h"
 #include "vendor/yar.h"
 #include "vm.h"
 
@@ -110,6 +111,8 @@ V gc_collect(Vm *vm) {
         chunk->constants.items[i] = forward(gc, chunk->constants.items[i]);
       break;
     }
+    case OBJ_USERDATA:
+      break;
     case OBJ_FWD:
       fprintf(stderr, "fatal GC error: forwarding pointer in to-space\n");
       abort();
@@ -127,6 +130,12 @@ V gc_collect(Vm *vm) {
       case OBJ_QUOT: {
         Bc **chunk_ptr = (Bc **)(hdr + 1);
         chunk_release(*chunk_ptr);
+        break;
+      }
+      case OBJ_USERDATA: {
+        Ud *ud = (Ud *)(hdr + 1);
+        if (ud->kind->finalizer != NULL)
+          ud->kind->finalizer(ud->data);
         break;
       }
       default:

@@ -1,3 +1,10 @@
+def print { stdout fprint }
+def println { stdout fprint "\n" stdout fprint }
+def nl { "\n" stdout fprint }
+
+def eprint { stderr fprint }
+def eprintln { stderr fprint "\n" stderr fprint }
+
 def when { [] if }
 def unless { swap when }
 

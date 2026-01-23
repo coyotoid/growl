@@ -28,6 +28,7 @@ enum {
   OP_CALL,
   OP_TAIL_DOWORD, // Tail call to dictionary word (reuses current frame)
   OP_TAIL_CALL,   // Tail call to quotation (reuses current frame)
+  OP_PRIM,
   OP_RETURN,
   OP_CHOOSE,
   OP_ADD,
@@ -47,10 +48,7 @@ enum {
   OP_GTE,
   OP_AND,
   OP_OR,
-  OP_TYPE,
   OP_CONCAT,
-  OP_PPRINT,
-  OP_PRINTSTACK,
 };
 
 #define STACK_SIZE 256
@@ -82,4 +80,10 @@ enum {
 V vm_init(Vm *);
 V vm_deinit(Vm *);
 I vm_run(Vm *, Bc *, I);
+
+V vm_push(Vm *, O);
+O vm_pop(Vm *);
+V vm_tpush(Vm *, O);
+O vm_tpop(Vm *);
+
 #endif

@@ -8,6 +8,7 @@
 #include "gc.h"
 #include "object.h"
 #include "print.h"
+#include "src/primitive.h"
 #include "string.h"
 #include "vm.h"
 
@@ -271,6 +272,14 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       }
       break;
     }
+    case OP_PRIM: {
+      I idx = decode_sleb128(&vm->ip);
+      Pr prim = primitives_table[idx];
+      I err = prim.fn(vm);
+      if (err != 0)
+        vm_error(vm, err, "primitive call failed");
+      break;
+    }
     case OP_RETURN:
       if (vm->rsp != vm->rstack) {
         Fr frame = vm_rpop(vm);
@@ -354,27 +363,6 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       if (type(a) != TYPE_STR)
         vm_error(vm, VM_ERR_TYPE, "expected string");
       vm_push(vm, string_concat(vm, a, b));
-      break;
-    }
-    case OP_TYPE: {
-      Str *s = string_unwrap(vm_pop(vm));
-      if (s == NULL)
-        vm_error(vm, VM_ERR_TYPE, "expected string");
-      printf("%.*s", (int)s->len, s->data);
-      break;
-    }
-    case OP_PPRINT: {
-      O obj = vm_pop(vm);
-      println(obj);
-      break;
-    }
-    case OP_PRINTSTACK: {
-      printf("Stk:");
-      for (O *p = vm->stack; p < vm->sp; p++) {
-        putchar(' ');
-        print(*p);
-      }
-      putchar('\n');
       break;
     }
     default:

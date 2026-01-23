@@ -1,12 +1,12 @@
 #load("std.grr")
 
 def fizzbuzz? { [3 % 0 =] [5 % 0 =] bi or }
-def fizz { when: 3 % 0 = ["Fizz" type]; }
-def buzz { when: 5 % 0 = ["Buzz" type]; }
+def fizz { when: 3 % 0 = ["Fizz" print]; }
+def buzz { when: 5 % 0 = ["Buzz" print]; }
 
 def fizzbuzz1 {
   if: fizzbuzz?
-    [ [fizz] keep buzz "\n" type ]
+    [ [fizz] keep buzz nl ]
     [ . ];
 }
 

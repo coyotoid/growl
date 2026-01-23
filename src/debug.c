@@ -4,6 +4,7 @@
 #include "debug.h"
 #include "dictionary.h"
 #include "print.h"
+#include "src/primitive.h"
 #include "vm.h"
 
 static I decode_sleb128(U8 *ptr, Z *bytes_read) {
@@ -94,7 +95,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
       Z bytes_read;
       I idx = decode_sleb128(&chunk->items[offset], &bytes_read);
       Dt *word = chunk->symbols.items[idx].resolved;
-      printf("DOWORD %s\n", word->name);
+      printf("DOWORD \"%s\"\n", word->name);
       return offset + bytes_read;
     }
     SIMPLE(CALL);
@@ -102,10 +103,17 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
       Z bytes_read;
       I idx = decode_sleb128(&chunk->items[offset], &bytes_read);
       Dt *word = chunk->symbols.items[idx].resolved;
-      printf("TAIL_DOWORD %s\n", word->name);
+      printf("TAIL_DOWORD \"%s\"\n", word->name);
       return offset + bytes_read;
     }
     SIMPLE(TAIL_CALL);
+    CASE(PRIM) {
+      Z bytes_read;
+      I idx = decode_sleb128(&chunk->items[offset], &bytes_read);
+      Pr prim = primitives_table[idx];
+      printf("PRIM \"%s\"\n", prim.name);
+      return offset + bytes_read;
+    }
     SIMPLE(RETURN);
     SIMPLE(CHOOSE);
     SIMPLE(ADD);
@@ -125,10 +133,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
     SIMPLE(GTE);
     SIMPLE(AND);
     SIMPLE(OR);
-    SIMPLE(TYPE);
     SIMPLE(CONCAT);
-    SIMPLE(PPRINT);
-    SIMPLE(PRINTSTACK);
   default:
     printf("??? (%d)\n", opcode);
     return offset;

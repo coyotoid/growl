@@ -7,6 +7,7 @@
 #include "debug.h"
 #include "gc.h"
 #include "object.h"
+#include "src/primitive.h"
 #include "string.h"
 #include "vm.h"
 
@@ -50,10 +51,7 @@ struct {
   {">=",     {OP_GTE, 0}},
   {"and",    {OP_AND, 0}},
   {"or",     {OP_OR, 0}},
-  {"type",   {OP_TYPE, 0}},
   {"^",      {OP_CONCAT, 0}},
-  {".",      {OP_PPRINT, 0}},
-  {".s",     {OP_PRINTSTACK, 0}},
   {NULL,     {0}},
 };
 // clang-format on
@@ -146,6 +144,14 @@ static I compile_call(Cm *cm, const char *name, I line, I col) {
       return 1;
     }
   }
+
+  I prim_idx = prim_find(name);
+  if (prim_idx != -1) {
+    chunk_emit_byte_with_line(cm->chunk, OP_PRIM, line, col);
+    chunk_emit_sleb128(cm->chunk, prim_idx);
+    return 1;
+  }
+
   Dt *word = upsert(cm->dictionary, name, NULL);
   if (!word) {
     fprintf(stderr, "compiler error at %ld:%ld: undefined word '%s'\n",

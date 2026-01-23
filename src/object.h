@@ -14,6 +14,7 @@ enum {
   OBJ_FWD = 2,
   OBJ_QUOT,
   OBJ_STR,
+  OBJ_USERDATA,
 };
 
 enum {
@@ -22,6 +23,7 @@ enum {
   TYPE_FWD = OBJ_FWD,
   TYPE_QUOT = OBJ_QUOT,
   TYPE_STR = OBJ_STR,
+  TYPE_USERDATA = OBJ_USERDATA,
 };
 
 typedef uintptr_t O;
