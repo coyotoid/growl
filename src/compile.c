@@ -400,8 +400,6 @@ static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
 }
 
 Bc *compile_program(Cm *cm, mpc_ast_t *ast) {
-  mpc_ast_print_to(ast, stderr);
-
   mpc_ast_trav_t *next = mpc_ast_traverse_start(ast, mpc_ast_trav_order_pre);
   mpc_ast_t *curr = mpc_ast_traverse_next(&next); // Begin traversal
 
