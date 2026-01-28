@@ -206,8 +206,8 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       O obj2 = vm_pop(vm);
       O obj1 = vm_pop(vm);
       vm_push(vm, obj1);
-      vm_push(vm, obj1);
       vm_push(vm, obj2);
+      vm_push(vm, obj1);
       vm_push(vm, obj2);
       break;
     }
@@ -223,10 +223,10 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       O c = vm_pop(vm);
       O b = vm_pop(vm);
       O a = vm_pop(vm);
-      vm_push(vm, d);
       vm_push(vm, c);
-      vm_push(vm, b);
+      vm_push(vm, d);
       vm_push(vm, a);
+      vm_push(vm, b);
       break;
     }
     case OP_NIP: {
@@ -302,21 +302,21 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       vm_rpush(vm, vm->chunk, vm->ip);
     do_call:
       switch (type(quot)) {
-      case TYPE_QUOT: {
+      case OBJ_QUOT: {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
         vm->chunk = chunk;
         vm->ip = chunk->items;
         break;
       }
-      case TYPE_COMPOSE: {
+      case OBJ_COMPOSE: {
         Qo *comp = (Qo *)(UNBOX(quot) + 1);
         vm_rpush(vm, vm->trampoline, vm->trampoline->items);
         vm->rsp[-1].obj = comp->second;
         quot = comp->first;
         goto do_call;
       }
-      case TYPE_CURRY: {
+      case OBJ_CURRY: {
         Qc *curry = (Qc *)(UNBOX(quot) + 1);
         vm_push(vm, curry->value);
         quot = curry->callable;
@@ -345,21 +345,21 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
       O quot = vm_pop(vm);
     do_tail_call:
       switch (type(quot)) {
-      case TYPE_QUOT: {
+      case OBJ_QUOT: {
         Bc **ptr = (Bc **)(UNBOX(quot) + 1);
         Bc *chunk = *ptr;
         vm->chunk = chunk;
         vm->ip = chunk->items;
         break;
       }
-      case TYPE_COMPOSE: {
+      case OBJ_COMPOSE: {
         Qo *comp = (Qo *)(UNBOX(quot) + 1);
         vm_rpush(vm, vm->trampoline, vm->trampoline->items);
         vm->rsp[-1].obj = comp->second;
         quot = comp->first;
         goto do_tail_call;
       }
-      case TYPE_CURRY: {
+      case OBJ_CURRY: {
         Qc *curry = (Qc *)(UNBOX(quot) + 1);
         vm_push(vm, curry->value);
         quot = curry->callable;
@@ -491,10 +491,10 @@ I vm_run(Vm *vm, Bc *chunk, I offset) {
     }
     case OP_CONCAT: {
       O b = vm_pop(vm);
-      if (type(b) != TYPE_STR)
+      if (type(b) != OBJ_STR)
         vm_error(vm, VM_ERR_TYPE, "expected string");
       O a = vm_pop(vm);
-      if (type(a) != TYPE_STR)
+      if (type(a) != OBJ_STR)
         vm_error(vm, VM_ERR_TYPE, "expected string");
       vm_push(vm, string_concat(vm, a, b));
       break;

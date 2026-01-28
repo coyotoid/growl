@@ -1,11 +1,41 @@
 #include <ctype.h>
 #include <err.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <utf.h>
 
 #include "lexer.h"
 #include "vendor/yar.h"
+
+Lx *lexer_make(Stream *s) {
+  Lx *lx = calloc(1, sizeof(Lx));
+  lx->stream = s;
+  return lx;
+}
+
+V lexer_free(Lx *lx) {
+  yar_free(lx);
+  free(lx);
+}
+
+static int lx_getc(Lx *lx) {
+  int c = ST_GETC(lx->stream);
+  if (c == '\n') {
+    lx->curr_line++;
+    lx->curr_col = 0;
+  } else if (c != -1) {
+    lx->curr_col++;
+  }
+  return c;
+}
+
+static void lx_ungetc(Lx *lx, int c) {
+  ST_UNGETC(c, lx->stream);
+  if (c == '\n') {
+    lx->curr_line--;
+  } else if (c != -1) {
+    lx->curr_col--;
+  }
+}
 
 static inline int is_delimiter(int i) {
   return i == '(' || i == ')' || i == '[' || i == ']' || i == '{' || i == '}' ||
@@ -24,7 +54,7 @@ static int getc_ws(Lx *lx) {
   if (ST_EOF(lx->stream))
     return -1;
   for (;;) {
-    int ch = ST_GETC(lx->stream);
+    int ch = lx_getc(lx);
     if (isspace(ch))
       continue;
     return ch;
@@ -32,21 +62,21 @@ static int getc_ws(Lx *lx) {
 }
 
 static int scanword(Lx *lx) {
-  int next = ST_GETC(lx->stream);
+  int next = lx_getc(lx);
 
   for (;;) {
     if (next == -1) {
-      if (lx->cursor == 0)
+      if (lx->count == 0)
         lx->kind = TOK_EOF;
       appendbyte(lx, 0);
       return lx->kind;
     } else if (is_delimiter(next) || isspace(next)) {
-      ST_UNGETC(next, lx->stream);
+      lx_ungetc(lx, next);
       appendbyte(lx, 0);
       return lx->kind;
     } else {
       appendbyte(lx, next);
-      next = ST_GETC(lx->stream);
+      next = lx_getc(lx);
       continue;
     }
   }
@@ -58,7 +88,7 @@ static void scanescape(Lx *lx) {
   Rune tmp;
 
   for (;;) {
-    next = ST_GETC(lx->stream);
+    next = lx_getc(lx);
 
     if (next == -1) {
       errx(1, "unterminated hex sequence '%s'", escbuf);
@@ -77,22 +107,28 @@ static void scanescape(Lx *lx) {
   }
 
   tmp = strtol(escbuf, &escptr, 16);
-  if (*escptr == '\0')
-    appendrune(lx, tmp);
-  else
+  if (*escptr == '\0') {
+    if (tmp < 256) {
+      appendbyte(lx, (U8)(tmp & 255));
+    } else {
+      appendrune(lx, tmp);
+    }
+
+  } else {
     errx(1, "invalid hex sequence '%s'", escbuf);
+  }
 }
 
 static int scanstring(Lx *lx) {
   int next;
 
   for (;;) {
-    next = ST_GETC(lx->stream);
+    next = lx_getc(lx);
     switch (next) {
     case -1:
       goto eof;
     case '\\':
-      next = ST_GETC(lx->stream);
+      next = lx_getc(lx);
       if (next == -1)
         goto eof;
       switch (next) {
@@ -128,8 +164,7 @@ static int scanstring(Lx *lx) {
         scanescape(lx);
         break;
       default:
-        fprintf(stderr, "unknown escape sequence '\\%c'\n", next);
-        abort();
+        return (lx->kind = TOK_INVALID);
       }
       break;
     case '"':
@@ -141,13 +176,13 @@ static int scanstring(Lx *lx) {
   }
 
 eof:
-  errx(1, "unterminated string literal");
-  return 0;
+  return (lx->kind = TOK_INVALID);
 }
 
 I lexer_next(Lx *lx) {
   int next;
   lx->cursor = 0;
+  lx->count = 0;
 
   if (ST_EOF(lx->stream)) {
     lx->kind = TOK_EOF;
@@ -156,9 +191,12 @@ I lexer_next(Lx *lx) {
 
   next = getc_ws(lx);
 
+  lx->start_line = lx->curr_line;
+  lx->start_col = (lx->curr_col > 0) ? lx->curr_col - 1 : 0;
+
   switch (next) {
   case '\\':
-    for (; next != '\n'; next = ST_GETC(lx->stream))
+    for (; next != '\n'; next = lx_getc(lx))
       ;
     return lexer_next(lx);
   case '(':
@@ -172,7 +210,7 @@ I lexer_next(Lx *lx) {
   case '"':
     return scanstring(lx);
   default:
-    ST_UNGETC(next, lx->stream);
+    lx_ungetc(lx, next);
     lx->kind = TOK_WORD;
     return scanword(lx);
   };

@@ -22,12 +22,15 @@ enum {
 typedef struct Lx {
   I kind;
   I cursor;
+  I curr_line, curr_col;
+  I start_line, start_col;
   Stream *stream;
   char *items;
   Z count, capacity;
 } Lx;
 
 Lx *lexer_make(Stream *);
+V lexer_free(Lx *lx);
 I lexer_next(Lx *);
 
 #endif

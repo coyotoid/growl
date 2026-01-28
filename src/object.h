@@ -11,23 +11,15 @@
 #define ORD(x) ((intptr_t)(x) >> 1)
 
 enum {
+  OBJ_NIL = 0,
+  OBJ_NUM = 1,
   OBJ_FWD = 2,
   OBJ_QUOT,
   OBJ_COMPOSE,
   OBJ_CURRY,
   OBJ_STR,
+  OBJ_ARRAY,
   OBJ_USERDATA,
-};
-
-enum {
-  TYPE_NIL = 0,
-  TYPE_NUM = 1,
-  TYPE_FWD = OBJ_FWD,
-  TYPE_QUOT = OBJ_QUOT,
-  TYPE_COMPOSE = OBJ_COMPOSE,
-  TYPE_CURRY = OBJ_CURRY,
-  TYPE_STR = OBJ_STR,
-  TYPE_USERDATA = OBJ_USERDATA,
 };
 
 typedef uintptr_t O;
@@ -50,7 +42,7 @@ typedef struct Qc {
 I type(O);
 static inline I callable(O o) {
   I t = type(o);
-  return t == TYPE_QUOT || t == TYPE_COMPOSE || t == TYPE_CURRY;
+  return t == OBJ_QUOT || t == OBJ_COMPOSE || t == OBJ_CURRY;
 }
 
 #endif

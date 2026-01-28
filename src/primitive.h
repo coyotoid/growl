@@ -1,7 +1,6 @@
 #ifndef PRIMITIVE_H
 #define PRIMITIVE_H
 
-#include "common.h"
 #include "vm.h"
 
 typedef struct Pr {

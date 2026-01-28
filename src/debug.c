@@ -3,8 +3,8 @@
 #include "chunk.h"
 #include "debug.h"
 #include "dictionary.h"
+#include "primitive.h"
 #include "print.h"
-#include "src/primitive.h"
 #include "vm.h"
 
 static I decode_sleb128(U8 *ptr, Z *bytes_read) {
@@ -70,7 +70,7 @@ static Z dis_instr(Bc *chunk, Z offset, Dt **dictionary, I indent) {
         print(obj);
         printf(")");
 
-        if (!IMM(obj) && obj != NIL && type(obj) == TYPE_QUOT) {
+        if (!IMM(obj) && obj != NIL && type(obj) == OBJ_QUOT) {
           putchar('\n');
           Hd *hdr = UNBOX(obj);
           Bc **chunk_ptr = (Bc **)(hdr + 1);

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "chunk.h"
 #include "compile.h"
@@ -8,7 +9,6 @@
 #include "vm.h"
 
 #include "vendor/linenoise.h"
-#include "vendor/mpc.h"
 
 #define REPL_BUFFER_SIZE 4096
 
@@ -18,16 +18,18 @@ I repl(void) {
 
   char *line;
   while ((line = linenoise("growl> ")) != NULL) {
-    mpc_result_t res;
-    if (!mpc_parse("<repl>", line, Program, &res)) {
-      mpc_err_print_to(res.error, stderr);
-      mpc_err_delete(res.error);
-      continue;
-    }
+    Buf b = { line, (int)strlen(line), 0, -1 };
+    Stream s = { bufstream_vtable, &b };
+
+    Lx *lx = lexer_make(&s);
+    Ast *root = parser_parse(lx);
+
     Cm cm = {0};
     compiler_init(&cm, &vm, "<repl>");
-    Bc *chunk = compile_program(&cm, res.output);
-    mpc_ast_delete(res.output);
+    Bc *chunk = compile_program(&cm, root);
+    ast_free(root);
+    lexer_free(lx);
+
     if (chunk != NULL) {
       vm_run(&vm, chunk, 0);
       chunk_release(chunk);
@@ -44,18 +46,23 @@ I loadfile(const char *fname) {
   Vm vm = {0};
   vm_init(&vm);
 
-  mpc_result_t res;
-  if (!mpc_parse_contents(fname, Program, &res)) {
-    mpc_err_print_to(res.error, stderr);
-    mpc_err_delete(res.error);
-    return 1;
+  FILE *f = fopen(fname, "rb");
+  if (!f) {
+      fprintf(stderr, "error: cannot open file '%s'\n", fname);
+      return 1;
   }
+
+  Stream s = { filestream_vtable, f };
+  Lx *lx = lexer_make(&s);
+  Ast *root = parser_parse(lx);
 
   Cm cm = {0};
   compiler_init(&cm, &vm, fname);
 
-  Bc *chunk = compile_program(&cm, res.output);
-  mpc_ast_delete(res.output);
+  Bc *chunk = compile_program(&cm, root);
+  ast_free(root);
+  lexer_free(lx);
+  fclose(f);
 
   if (chunk != NULL) {
 #if COMPILER_DEBUG
@@ -72,9 +79,6 @@ I loadfile(const char *fname) {
 }
 
 int main(int argc, const char *argv[]) {
-  parser_init();
-  atexit(parser_deinit);
-
   switch (argc) {
   case 1:
     return repl();

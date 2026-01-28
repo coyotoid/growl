@@ -27,7 +27,6 @@ sources = [
   'src/userdata.c',
   'src/vm.c',
   'src/vendor/linenoise.c',
-  'src/vendor/mpc.c',
   'src/vendor/yar.c',
 ]
 

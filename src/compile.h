@@ -4,10 +4,9 @@
 #include "chunk.h"
 #include "gc.h"
 #include "vm.h"
+#include "parser.h"
 
-#include "vendor/mpc.h"
-
-#define COMPILER_DEBUG DEBUG
+#define COMPILER_DEBUG 0
 
 /** Compiler context */
 typedef struct Cm {
@@ -19,4 +18,4 @@ typedef struct Cm {
 
 V compiler_init(Cm *, Vm *, const char *);
 V compiler_deinit(Cm *);
-Bc *compile_program(Cm *, mpc_ast_t *);
+Bc *compile_program(Cm *, Ast *);

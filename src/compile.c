@@ -7,12 +7,11 @@
 #include "debug.h"
 #include "gc.h"
 #include "object.h"
+#include "parser.h"
 #include "src/primitive.h"
 #include "string.h"
-#include "vm.h"
-
-#include "vendor/mpc.h"
 #include "vendor/yar.h"
+#include "vm.h"
 
 // clang-format off
 struct {
@@ -26,6 +25,7 @@ struct {
   {"2dup",    {OP_2DUP, 0}},
   {"2drop",   {OP_2DROP, 0}},
   {"2swap",   {OP_2SWAP, 0}},
+  {"2over",   {OP_2TOR, OP_2DUP, OP_2FROMR, OP_2SWAP, 0}},
   {"over",    {OP_OVER, 0}},
   {"nip",     {OP_NIP, 0}},
   {"bury",    {OP_BURY, 0}},
@@ -118,8 +118,7 @@ static V optim_tailcall(Bc *chunk) {
   }
 }
 
-static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
-static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next);
+static I compile_expr(Cm *cm, Ast *node);
 
 static I compile_constant(Cm *cm, O value, I line, I col) {
   I idx = chunk_add_constant(cm->chunk, value);
@@ -169,31 +168,16 @@ static I compile_call(Cm *cm, const char *name, I line, I col) {
   return 1;
 }
 
-static I compile_command(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  curr = mpc_ast_traverse_next(next);
-  const char *name = curr->contents;
-  I name_line = curr->state.row;
-  I name_col = curr->state.col;
-  (void)mpc_ast_traverse_next(next);
-  curr = mpc_ast_traverse_next(next);
-  while (curr != NULL) {
-    if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, ";") == 0)
-      break;
-    I res = compile_expr(cm, curr, next);
-    if (!res)
+static I compile_command(Cm *cm, Ast *node) {
+  for (size_t i = 0; i < node->children.count; i++) {
+    if (!compile_expr(cm, node->children.items[i]))
       return 0;
-    curr = mpc_ast_traverse_next(next);
   }
-  compile_call(cm, name, name_line, name_col);
-  return 1;
+  return compile_call(cm, node->name, node->line, node->col);
 }
 
-static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  (void)mpc_ast_traverse_next(next); // skip 'def'
-  curr = mpc_ast_traverse_next(next);
-  const char *name = arena_strdup(cm->arena, curr->contents);
-  (void)mpc_ast_traverse_next(next); // skip '{'
-
+static I compile_definition(Cm *cm, Ast *node) {
+  const char *name = arena_strdup(cm->arena, node->name);
   Dt *entry = upsert(cm->dictionary, name, cm->arena);
 
   Cm inner = {0};
@@ -202,19 +186,14 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   inner.vm = cm->vm;
   inner.dictionary = cm->dictionary;
 
-  curr = mpc_ast_traverse_next(next);
-  while (curr != NULL) {
-    if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, "}") == 0)
-      break;
-    if (!compile_expr(&inner, curr, next)) {
+  for (size_t i = 0; i < node->children.count; i++) {
+    if (!compile_expr(&inner, node->children.items[i])) {
       chunk_release(inner.chunk);
       return 0;
     }
-    curr = mpc_ast_traverse_next(next);
   }
 
-  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, curr->state.row,
-                            curr->state.col);
+  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, node->line, node->col);
   optim_tailcall(inner.chunk);
 
   entry->chunk = inner.chunk;
@@ -226,7 +205,7 @@ static I compile_definition(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   return 1;
 }
 
-static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
+static O compile_quotation_obj(Cm *cm, Ast *node) {
   Cm inner = {0};
   inner.arena = cm->arena;
 
@@ -234,20 +213,13 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   inner.vm = cm->vm;
   inner.dictionary = cm->dictionary;
 
-  (void)mpc_ast_traverse_next(next);
-  curr = mpc_ast_traverse_next(next);
-  while (curr != NULL) {
-    if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, "]") == 0)
-      break;
-    I res = compile_expr(&inner, curr, next);
-    if (!res) {
+  for (size_t i = 0; i < node->children.count; i++) {
+    if (!compile_expr(&inner, node->children.items[i])) {
       chunk_release(inner.chunk);
-      return res;
+      return NIL;
     }
-    curr = mpc_ast_traverse_next(next);
   }
-  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, curr->state.row,
-                            curr->state.col);
+  chunk_emit_byte_with_line(inner.chunk, OP_RETURN, node->line, node->col);
   optim_tailcall(inner.chunk);
 
   Hd *hd = gc_alloc(cm->vm, sizeof(Hd) + sizeof(Bc *));
@@ -258,158 +230,103 @@ static O compile_quotation_obj(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
   return BOX(hd);
 }
 
-static I compile_quotation(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next,
-                           I line, I col) {
-  return compile_constant(cm, compile_quotation_obj(cm, curr, next), line, col);
+static I compile_quotation(Cm *cm, Ast *node) {
+  O obj = compile_quotation_obj(cm, node);
+  if (obj == NIL)
+    return 0;
+  return compile_constant(cm, obj, node->line, node->col);
 }
 
-static I compile_pragma(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  (void)mpc_ast_traverse_next(next);
-  curr = mpc_ast_traverse_next(next);
-  const char *name = curr->contents;
-  I line = curr->state.row;
-  I col = curr->state.col;
-  curr = mpc_ast_traverse_next(next);
-  I has_args = 0;
-
-  if (curr != NULL && strcmp(curr->tag, "char") == 0 &&
-      strcmp(curr->contents, "(") == 0) {
-    has_args = 1;
-    curr = mpc_ast_traverse_next(next); // Skip '('
-  }
-
-  if (strcmp(name, "load") == 0) {
-    if (!has_args) {
-      fprintf(stderr,
-              "compiler error at %ld:%ld: #load requires a filename argument\n",
-              line + 1, col + 1);
+static I compile_pragma(Cm *cm, Ast *node) {
+  if (strcmp(node->name, "#load") == 0) {
+    if (node->children.count == 0) {
+      fprintf(stderr, "compiler error: #load requires argument\n");
       return 0;
     }
-    if (!strstr(curr->tag, "expr|string")) {
-      fprintf(stderr,
-              "compiler error at %ld:%ld: #load requires a string argument\n",
-              line + 1, col + 1);
+    Ast *arg = node->children.items[0];
+    if (arg->type != AST_STR) {
+      fprintf(stderr, "compiler error: #load requires string\n");
       return 0;
     }
 
-    char *fname_raw = curr->contents;
-    Z len = strlen(fname_raw);
-    char *fname = malloc(len + 1);
-    memcpy(fname, fname_raw + 1, len - 2);
-    fname[len - 2] = '\0';
-    fname = mpcf_unescape(fname);
-
-    mpc_result_t res;
-    extern mpc_parser_t *Program;
-
-    if (!mpc_parse_contents(fname, Program, &res)) {
-      fprintf(stderr, "compiler error at %ld:%ld: failed to parse file '%s':\n",
-              line + 1, col + 1, fname);
-      mpc_err_print_to(res.error, stderr);
-      mpc_err_delete(res.error);
-      free(fname);
+    char *fname = arg->name;
+    FILE *f = fopen(fname, "rb");
+    if (!f) {
+      fprintf(stderr, "compiler error: cannot open file '%s'\n", fname);
       return 0;
     }
 
-    mpc_ast_trav_t *inner_next =
-        mpc_ast_traverse_start(res.output, mpc_ast_trav_order_pre);
-    mpc_ast_t *inner_curr = mpc_ast_traverse_next(&inner_next);
+    Stream s = {filestream_vtable, f};
+    Lx *lx = lexer_make(&s);
+    Ast *root = parser_parse(lx);
 
-    I success = compile_ast(cm, inner_curr, &inner_next);
-
-    mpc_ast_delete(res.output);
-
-    if (!success) {
-      fprintf(stderr,
-              "compiler error at %ld:%ld: failed to compile file '%s'\n",
-              line + 1, col + 1, fname);
-      free(fname);
-      return 0;
-    }
-
-    free(fname);
-
-    curr = mpc_ast_traverse_next(next);
-    while (curr != NULL) {
-      if (strcmp(curr->tag, "char") == 0 && strcmp(curr->contents, ")") == 0)
+    I success = 1;
+    for (size_t i = 0; i < root->children.count; i++) {
+      if (!compile_expr(cm, root->children.items[i])) {
+        success = 0;
         break;
-      curr = mpc_ast_traverse_next(next);
+      }
     }
-  } else {
-    fprintf(stderr, "compiler warning at %ld:%ld: unknown pragma \"%s\"\n",
-            line + 1, col + 1, name);
-  }
 
-  if (has_args) {
-    if (curr == NULL || strcmp(curr->contents, ")") != 0) {
-      fprintf(stderr, "error at %ld:%ld: expected ')' after pragma arguments\n",
-              line + 1, col + 1);
-      return 0;
-    }
+    ast_free(root);
+    lexer_free(lx);
+    fclose(f);
+    return success;
   }
-
+  fprintf(stderr, "compiler warning: unknown pragma \"%s\"\n", node->name);
   return 1;
 }
 
-static I compile_expr(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  I line = curr->state.row;
-  I col = curr->state.col;
-  if (strstr(curr->tag, "expr|number") != NULL) {
-    I num = strtol(curr->contents, NULL, 0);
-    return compile_constant(cm, NUM(num), line, col);
-  } else if (strstr(curr->tag, "expr|string") != NULL) {
-    curr->contents[strlen(curr->contents) - 1] = '\0';
-    char *unescaped = malloc(strlen(curr->contents + 1) + 1);
-    strcpy(unescaped, curr->contents + 1);
-    unescaped = mpcf_unescape(unescaped);
-    O obj = string_make(cm->vm, unescaped, -1);
-    free(unescaped);
-    return compile_constant(cm, obj, line, col);
-  } else if (strstr(curr->tag, "expr|word") != NULL) {
-    return compile_call(cm, curr->contents, line, col);
-  } else if (strstr(curr->tag, "expr|quotation") != NULL) {
-    return compile_quotation(cm, curr, next, line, col);
-  } else if (strstr(curr->tag, "expr|def") != NULL) {
-    return compile_definition(cm, curr, next);
-  } else if (strstr(curr->tag, "expr|command") != NULL) {
-    return compile_command(cm, curr, next);
-  } else if (strstr(curr->tag, "expr|pragma") != NULL) {
-    return compile_pragma(cm, curr, next);
-  } else if (strstr(curr->tag, "expr|comment") != NULL) {
+static I compile_expr(Cm *cm, Ast *node) {
+  if (!node)
+    return 0;
+  switch (node->type) {
+  case AST_INT: {
+    O num = NUM(node->int_val);
+    return compile_constant(cm, num, node->line, node->col);
+  }
+  case AST_STR: {
+    O obj = string_make(cm->vm, node->name, -1);
+    return compile_constant(cm, obj, node->line, node->col);
+  }
+  case AST_WORD:
+    return compile_call(cm, node->name, node->line, node->col);
+  case AST_QUOTE:
+    return compile_quotation(cm, node);
+  case AST_DEF:
+    return compile_definition(cm, node);
+  case AST_CMD:
+    return compile_command(cm, node);
+  case AST_PRAGMA:
+    return compile_pragma(cm, node);
+  case AST_PROGRAM:
+    for (size_t i = 0; i < node->children.count; i++) {
+      if (!compile_expr(cm, node->children.items[i]))
+        return 0;
+    }
     return 1;
-  } else {
-    fprintf(stderr, "compiler error at %ld:%ld: \"%s\" nyi\n", line + 1,
-            col + 1, curr->tag);
+  default:
+    fprintf(stderr, "compiler error: nyi ast type %d\n", (int)node->type);
     return 0;
   }
 }
 
-static I compile_ast(Cm *cm, mpc_ast_t *curr, mpc_ast_trav_t **next) {
-  (void)mpc_ast_traverse_next(next);
-  curr = mpc_ast_traverse_next(next);
-  while (curr != NULL) {
-    if (strcmp(curr->tag, "regex") == 0 && strcmp(curr->contents, "") == 0)
-      break;
-    I res = compile_expr(cm, curr, next);
-    if (!res)
-      return res;
-    curr = mpc_ast_traverse_next(next);
+Bc *compile_program(Cm *cm, Ast *ast) {
+  if (ast->type == AST_PROGRAM) {
+    for (size_t i = 0; i < ast->children.count; i++) {
+      if (!compile_expr(cm, ast->children.items[i])) {
+        chunk_release(cm->chunk);
+        return NULL;
+      }
+    }
+  } else {
+    if (!compile_expr(cm, ast)) {
+      chunk_release(cm->chunk);
+      return NULL;
+    }
   }
 
-  return 1;
-}
-
-Bc *compile_program(Cm *cm, mpc_ast_t *ast) {
-  mpc_ast_trav_t *next = mpc_ast_traverse_start(ast, mpc_ast_trav_order_pre);
-  mpc_ast_t *curr = mpc_ast_traverse_next(&next); // Begin traversal
-
-  if (!compile_ast(cm, curr, &next)) {
-    chunk_release(cm->chunk);
-    return NULL;
-  }
-
-  Bc *chunk = cm->chunk;
-  chunk_emit_byte(chunk, OP_RETURN);
-  optim_tailcall(chunk);
-  return chunk;
+  chunk_emit_byte(cm->chunk, OP_RETURN);
+  optim_tailcall(cm->chunk);
+  return cm->chunk;
 }

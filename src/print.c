@@ -1,13 +1,56 @@
 #include <inttypes.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "object.h"
 #include "print.h"
 #include "string.h"
 #include "userdata.h"
-#include "vendor/mpc.h"
+
+static V print_string(Str *s) {
+  putchar('"');
+  for (Z i = 0; i < s->len; i++) {
+    unsigned char c = s->data[i];
+    switch (c) {
+    case '\t':
+      printf("\\t");
+      break;
+    case '\n':
+      printf("\\n");
+      break;
+    case '\r':
+      printf("\\r");
+      break;
+    case '\b':
+      printf("\\b");
+      break;
+    case '\v':
+      printf("\\v");
+      break;
+    case '\f':
+      printf("\\f");
+      break;
+    case '\0':
+      printf("\\0");
+      break;
+    case '\x1b':
+      printf("\\e");
+      break;
+    case '\\':
+      printf("\\\\");
+      break;
+    case '\"':
+      printf("\\\"");
+      break;
+    default:
+      if (c < 32 || c > 126) {
+        printf("\\x%02x;", c);
+      } else {
+        putchar(c);
+      }
+    }
+  }
+  putchar('"');
+}
 
 V print(O o) {
   if (o == NIL) {
@@ -27,14 +70,8 @@ V print(O o) {
       printf("<curried>");
       break;
     case OBJ_STR: {
-      // TODO: make this binary safe
       Str *s = string_unwrap(o);
-      char *escaped = malloc(s->len + 1);
-      memcpy(escaped, s->data, s->len);
-      escaped[s->len] = 0;
-      escaped = mpcf_escape(escaped);
-      printf("\"%s\"", escaped);
-      free(escaped);
+      print_string(s);
       break;
     }
     case OBJ_USERDATA: {
