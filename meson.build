@@ -45,6 +45,7 @@ growl = executable(
 )
 
 growlnext_sources = [
+    'next/core/alien.c',
     'next/core/arena.c',
     'next/core/callable.c',
     'next/core/compiler.c',
@@ -53,6 +54,7 @@ growlnext_sources = [
     'next/core/sleb128.c',
     'next/core/string.c',
     'next/core/tuple.c',
+    'next/core/value.c',
     'next/core/vm.c',
     'next/main.c',
 ]

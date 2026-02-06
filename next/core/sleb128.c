@@ -16,7 +16,7 @@ intptr_t growl_sleb128_decode(uint8_t **ptr) {
     shift += 7;
   } while (byte & 0x80);
 
-  if ((shift < 64) && (byte & 0x40)) {
+  if (shift < 64 && byte & 0x40) {
     result |= -(1LL << shift);
   }
 

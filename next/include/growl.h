@@ -21,18 +21,25 @@ typedef struct GrowlTuple GrowlTuple;
 typedef struct GrowlQuotation GrowlQuotation;
 typedef struct GrowlCompose GrowlCompose;
 typedef struct GrowlCurry GrowlCurry;
+typedef struct GrowlAlienType GrowlAlienType;
+typedef struct GrowlAlien GrowlAlien;
 typedef struct GrowlGCArena GrowlGCArena;
 typedef struct GrowlFrame GrowlFrame;
 typedef struct GrowlVM GrowlVM;
 
 enum {
-  GROWL_STRING,
-  GROWL_LIST,
-  GROWL_TUPLE,
-  GROWL_QUOTATION,
-  GROWL_COMPOSE,
-  GROWL_CURRY,
+  GROWL_TYPE_NIL,
+  GROWL_TYPE_NUMBER,
+  GROWL_TYPE_STRING,
+  GROWL_TYPE_LIST,
+  GROWL_TYPE_TUPLE,
+  GROWL_TYPE_QUOTATION,
+  GROWL_TYPE_COMPOSE,
+  GROWL_TYPE_CURRY,
+  GROWL_TYPE_ALIEN,
 };
+
+uint32_t growl_type(Growl obj);
 
 struct GrowlObjectHeader {
   size_t size;
@@ -82,6 +89,19 @@ GrowlCompose *growl_unwrap_compose(Growl obj);
 Growl growl_curry(GrowlVM *vm, Growl value, Growl callable);
 GrowlCurry *growl_unwrap_curry(Growl obj);
 
+struct GrowlAlienType {
+  const char *name;
+  void (*finalizer)(void *);
+};
+
+struct GrowlAlien {
+  GrowlAlienType *type;
+  void *data;
+};
+
+Growl growl_make_alien(GrowlVM *vm, GrowlAlienType *type, void *data);
+GrowlAlien *growl_unwrap_alien(Growl obj, GrowlAlienType *type);
+
 struct GrowlGCArena {
   uint8_t *start, *end;
   uint8_t *free;
@@ -103,6 +123,7 @@ void *growl_arena_alloc(GrowlGCArena *arena, size_t size, size_t align,
 struct GrowlFrame {
   GrowlQuotation *quot;
   uint8_t *ip;
+  Growl next;
 };
 
 struct GrowlVM {
@@ -115,6 +136,9 @@ struct GrowlVM {
   Growl wst[GROWL_STACK_SIZE], *sp;
   Growl rst[GROWL_STACK_SIZE], *rsp;
   GrowlFrame cst[GROWL_CALL_STACK_SIZE], *csp;
+
+  GrowlQuotation *compose_trampoline;
+  Growl next;
 
   Growl **roots;
   size_t root_count, root_capacity;

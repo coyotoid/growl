@@ -33,6 +33,8 @@ GrowlVM *growl_vm_init(void) {
   mem->root_count = 0;
   mem->root_capacity = 0;
 
+  // TODO: initialize compose trampoline
+
   return mem;
 }
 
@@ -63,6 +65,12 @@ void growl_push(GrowlVM *vm, Growl obj) {
   *vm->sp++ = obj;
 }
 
+Growl growl_peek(GrowlVM *vm, size_t depth) {
+  if (vm->sp <= vm->wst + depth)
+    vm_error(vm, "work stack underflow");
+  return vm->sp[-(depth + 1)];
+}
+
 Growl growl_pop(GrowlVM *vm) {
   if (vm->sp <= vm->wst)
     vm_error(vm, "work stack underflow");
@@ -85,19 +93,47 @@ Growl growl_rpop(GrowlVM *vm) {
   return obj;
 }
 
-static void push_call(GrowlVM *vm, GrowlQuotation *q, uint8_t *ip) {
+static void callstack_push(GrowlVM *vm, GrowlQuotation *q, uint8_t *ip) {
   if (vm->csp >= vm->cst + GROWL_CALL_STACK_SIZE)
     vm_error(vm, "call stack overflow");
   vm->csp->quot = q;
   vm->csp->ip = ip;
   vm->csp++;
 }
-static GrowlFrame pop_call(GrowlVM *vm) {
+
+static GrowlFrame callstack_pop(GrowlVM *vm) {
   if (vm->csp <= vm->cst)
     vm_error(vm, "call stack underflow");
   return *--vm->csp;
 }
 
+static inline void dispatch(GrowlVM *vm, Growl obj) {
+  for (;;) {
+    switch (growl_type(obj)) {
+    case GROWL_TYPE_QUOTATION: {
+      GrowlQuotation *q = (GrowlQuotation *)(GROWL_UNBOX(obj) + 1);
+      vm->quotation = q;
+      vm->ip = q->data;
+      return;
+    }
+    case GROWL_TYPE_COMPOSE: {
+      GrowlCompose *c = (GrowlCompose *)(GROWL_UNBOX(obj) + 1);
+      callstack_push(vm, vm->compose_trampoline, vm->compose_trampoline->data);
+      vm->csp[-1].next = c->second;
+      obj = c->first;
+      continue;
+    }
+    case GROWL_TYPE_CURRY: {
+      GrowlCurry *c = (GrowlCurry *)(GROWL_UNBOX(obj) + 1);
+      growl_push(vm, c->value);
+      obj = c->callable;
+      continue;
+    }
+    default:
+      vm_error(vm, "attempt to call non-callable");
+    }
+  }
+}
 int vm_doquot(GrowlVM *vm, GrowlQuotation *quot) {
   size_t gc_mark = growl_gc_mark(vm);
   int result = setjmp(vm->error);
@@ -117,46 +153,129 @@ int vm_doquot(GrowlVM *vm, GrowlQuotation *quot) {
   vm->ip = quot->data;
   vm->quotation = quot;
 
-  for (;;) {
-    uint8_t opcode;
-    switch (opcode = *vm->ip++) {
-    case GOP_NOP:
-      break;
-    case GOP_PUSH_NIL:
-      growl_push(vm, GROWL_NIL);
-      break;
-    case GOP_PUSH_CONSTANT: {
-      intptr_t idx = growl_sleb128_decode(&vm->ip);
-      if (constants != NULL) {
-        growl_push(vm, constants->data[idx]);
-      } else {
-        vm_error(vm, "constant index %" PRIdPTR " out of bounds", idx);
-      }
-      break;
-    case GOP_CALL: { // TODO: compose and curry
-      Growl obj = growl_pop(vm);
-      push_call(vm, vm->quotation, vm->ip);
-      GrowlQuotation *obj_quot = growl_unwrap_quotation(obj);
-      if (obj_quot == NULL)
-        vm_error(vm, "attempt to call non-callable");
-      vm->quotation = obj_quot;
-      vm->ip = obj_quot->data;
-      break;
-    }
-    case GOP_RETURN:
-      if (vm->csp != vm->cst) {
-        GrowlFrame frame = pop_call(vm);
-        vm->quotation = frame.quot;
-        vm->ip = frame.ip;
-      } else {
-        goto done;
-      }
-      break;
-    }
-    default:
-      vm_error(vm, "unknown opcode %d", opcode);
-    }
+  // clang-format off
+#define VM_START() for (;;) { uint8_t opcode; switch(opcode = *vm->ip++) {
+#define VM_END() }}
+#define VM_DEFAULT() default:
+#define VM_OP(op) case GOP_## op:
+#define VM_NEXT() break
+  // clang-format on
+
+  VM_START()
+  VM_OP(NOP) VM_NEXT();
+  VM_OP(PUSH_NIL) {
+    growl_push(vm, GROWL_NIL);
+    VM_NEXT();
   }
+  VM_OP(PUSH_CONSTANT) {
+    intptr_t idx = growl_sleb128_decode(&vm->ip);
+    if (constants != NULL) {
+      growl_push(vm, constants->data[idx]);
+    } else {
+      vm_error(vm, "constant index %" PRIdPTR " out of bounds", idx);
+    }
+    VM_NEXT();
+  }
+  VM_OP(DROP) {
+    (void)growl_pop(vm);
+    VM_NEXT();
+  }
+  VM_OP(DUP) {
+    growl_push(vm, growl_peek(vm, 0));
+    VM_NEXT();
+  }
+  VM_OP(SWAP) {
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    growl_push(vm, b);
+    growl_push(vm, a);
+    VM_NEXT();
+  }
+  VM_OP(2DROP) {
+    (void)growl_pop(vm);
+    (void)growl_pop(vm);
+    VM_NEXT();
+  }
+  VM_OP(2DUP) {
+    growl_push(vm, growl_peek(vm, 1));
+    growl_push(vm, growl_peek(vm, 1));
+    VM_NEXT();
+  }
+  VM_OP(2SWAP) {
+    Growl d = growl_pop(vm);
+    Growl c = growl_pop(vm);
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    growl_push(vm, c);
+    growl_push(vm, d);
+    growl_push(vm, a);
+    growl_push(vm, b);
+    VM_NEXT();
+  }
+  VM_OP(NIP) {
+    Growl b = growl_pop(vm);
+    (void)growl_pop(vm);
+    growl_push(vm, b);
+    VM_NEXT();
+  }
+  VM_OP(OVER) {
+    growl_push(vm, growl_peek(vm, 1));
+    VM_NEXT();
+  }
+  VM_OP(BURY) {
+    Growl c = growl_pop(vm);
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    growl_push(vm, c);
+    growl_push(vm, a);
+    growl_push(vm, b);
+    VM_NEXT();
+  }
+  VM_OP(TO_RETAIN) {
+    growl_rpush(vm, growl_pop(vm));
+    VM_NEXT();
+  }
+  VM_OP(FROM_RETAIN) {
+    growl_push(vm, growl_rpop(vm));
+    VM_NEXT();
+  }
+  VM_OP(DIG) {
+    Growl c = growl_pop(vm);
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    growl_push(vm, b);
+    growl_push(vm, c);
+    growl_push(vm, a);
+    VM_NEXT();
+  }
+  VM_OP(CALL) { // TODO: compose and curry
+    Growl obj = growl_pop(vm);
+    callstack_push(vm, vm->quotation, vm->ip);
+    dispatch(vm, obj);
+    VM_NEXT();
+  }
+  VM_OP(CALL_NEXT) {
+    growl_push(vm, vm->next);
+    vm->next = GROWL_NIL;
+    __attribute__((__fallthrough__));
+  }
+  VM_OP(TAIL_CALL) {
+    Growl obj = growl_pop(vm);
+    dispatch(vm, obj);
+    VM_NEXT();
+  }
+  VM_OP(RETURN) {
+    if (vm->csp != vm->cst) {
+      GrowlFrame frame = callstack_pop(vm);
+      vm->quotation = frame.quot;
+      vm->ip = frame.ip;
+    } else {
+      goto done;
+    }
+    VM_NEXT();
+  }
+  VM_DEFAULT() { vm_error(vm, "unknown opcode %d", opcode); }
+  VM_END()
 
 done:
   growl_gc_reset(vm, gc_mark);

@@ -16,11 +16,11 @@ void growl_arena_free(GrowlGCArena *arena) {
 
 void *growl_arena_alloc(GrowlGCArena *arena, size_t size, size_t align,
                         size_t count) {
-  ptrdiff_t padding = -(uintptr_t)arena->start & (align - 1);
-  ptrdiff_t available = arena->end - arena->start - padding;
+  ptrdiff_t padding = -(uintptr_t)arena->free & (align - 1);
+  ptrdiff_t available = arena->end - arena->free - padding;
   if (available < 0 || count > available / size)
     abort();
-  void *p = arena->start + padding;
-  arena->start += padding + count * size;
+  void *p = arena->free + padding;
+  arena->free += padding + count * size;
   return memset(p, 0, count * size);
 }
