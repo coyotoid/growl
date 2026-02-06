@@ -1,0 +1,12 @@
+#ifndef GROWL_OPCODES_H
+#define GROWL_OPCODES_H
+
+enum {
+  GOP_NOP = 0,
+  GOP_PUSH_NIL,
+  GOP_PUSH_CONSTANT,
+  GOP_CALL,
+  GOP_RETURN,
+};
+
+#endif // GROWL_OPCODES_H
