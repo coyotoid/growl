@@ -250,6 +250,17 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     growl_push(vm, growl_rpop(vm));
     VM_NEXT();
   }
+  VM_OP(CHOOSE) {
+    Growl cond = growl_pop(vm);
+    Growl f = growl_pop(vm);
+    Growl t = growl_pop(vm);
+    if (cond != GROWL_NIL) {
+      growl_push(vm, t);
+    } else {
+      growl_push(vm, f);
+    }
+    VM_NEXT();
+  }
   VM_OP(CALL) {
     Growl obj = growl_pop(vm);
     callstack_push(vm, vm->current_quotation, vm->ip);

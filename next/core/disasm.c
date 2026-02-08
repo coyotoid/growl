@@ -58,6 +58,7 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
     OPCODE1(DIG);
     OPCODE1(TO_RETAIN);
     OPCODE1(FROM_RETAIN);
+    OPCODE1(CHOOSE);
     OPCODE1(CALL);
     OPCODE1(CALL_NEXT);
     OPCODE1(TAIL_CALL);

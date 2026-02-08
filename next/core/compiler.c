@@ -1,4 +1,5 @@
 #include <growl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,8 @@ Primitive primitives[] = {
   {"dig",     {GOP_DIG, 0}},
   {">r",      {GOP_TO_RETAIN, 0}},
   {"r>",      {GOP_FROM_RETAIN, 0}},
+  {"?",       {GOP_CHOOSE, 0}},
+  {"if",      {GOP_CHOOSE, GOP_CALL, 0}},
   {"call",    {GOP_CALL, 0}},
   {"compose", {GOP_COMPOSE, 0}},
   {"curry",   {GOP_CURRY, 0}},
@@ -76,7 +79,7 @@ Primitive primitives[] = {
 
 static void grow(void *slice, ptrdiff_t size, ptrdiff_t align, GrowlArena *a) {
   struct {
-    char *data;
+    uint8_t *data;
     ptrdiff_t len;
     ptrdiff_t cap;
   } replica;
@@ -85,7 +88,7 @@ static void grow(void *slice, ptrdiff_t size, ptrdiff_t align, GrowlArena *a) {
   if (!replica.data) {
     replica.cap = 1;
     replica.data = growl_arena_alloc(a, 2 * size, align, replica.cap);
-  } else if (a->free == (uint8_t *)replica.data + size * replica.cap) {
+  } else if (a->free == replica.data + size * replica.cap) {
     growl_arena_alloc(a, size, 1, replica.cap);
   } else {
     void *data = growl_arena_alloc(a, 2 * size, align, replica.cap);
@@ -134,7 +137,16 @@ static int is_integer(const char *str, long *out) {
   return 0;
 }
 
-static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk);
+__attribute__((format(printf, 2, 3))) static void
+compile_error(GrowlLexer *lexer, const char *fmt, ...) {
+  fprintf(stderr, "%d:%d: compile error: ", lexer->start_row + 1,
+          lexer->start_col + 1);
+  va_list args;
+  va_start(args, fmt);
+  vfprintf(stderr, fmt, args);
+  va_end(args);
+  fprintf(stderr, "\n");
+}
 
 static void optimize_tail_calls(Chunk *chunk) {
   size_t i = 0;
@@ -158,6 +170,8 @@ static void optimize_tail_calls(Chunk *chunk) {
   }
 }
 
+static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk);
+
 static int compile_quotation(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
   growl_lexer_next(lexer); // skip '['
   Chunk quot_chunk = {0};
@@ -169,7 +183,7 @@ static int compile_quotation(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
     }
   }
   if (lexer->kind != ']') {
-    fprintf(stderr, "error: expected ']' to close quotation\n");
+    compile_error(lexer, "expected ']' to close quotation");
     return 1;
   }
 
@@ -197,14 +211,14 @@ static int compile_string(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
 static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
   growl_lexer_next(lexer);
   if (lexer->kind != GTOK_WORD) {
-    fprintf(stderr, "compiler: expected name after 'def'\n");
+    compile_error(lexer, "expected name after 'def'");
     return 1;
   }
 
   char *name = growl_arena_strdup(&vm->scratch, lexer->buffer);
   growl_lexer_next(lexer);
   if (lexer->kind != GTOK_LBRACE) {
-    fprintf(stderr, "compiler: expected '{' after def name\n");
+    compile_error(lexer, "expected '{' after def name '%s'", name);
     return 1;
   }
 
@@ -218,7 +232,7 @@ static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
   }
 
   if (lexer->kind != GTOK_RBRACE) {
-    fprintf(stderr, "error: expected '}' to close def\n");
+    compile_error(lexer, "expected '}' to close def '%s'", name);
     return 1;
   }
 
@@ -253,7 +267,7 @@ static int compile_call(GrowlVM *vm, GrowlLexer *lexer, const char *name,
 
   GrowlDictionary *entry = growl_dictionary_upsert(&vm->dictionary, name, NULL);
   if (entry == NULL) {
-    fprintf(stderr, "compiler: undefined word '%s'\n", name);
+    compile_error(lexer, "undefined word '%s'", name);
     return 1;
   }
   emit_byte(vm, chunk, GOP_WORD);
@@ -273,7 +287,7 @@ static int compile_command(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
     }
   }
   if (lexer->kind != GTOK_SEMICOLON) {
-    fprintf(stderr, "compiler: expected ';' to close command\n");
+    compile_error(lexer, "expected ';' to close command '%s:'", name);
     return 1;
   }
   return compile_call(vm, lexer, name, chunk);
@@ -282,6 +296,12 @@ static int compile_command(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
 static int compile_word(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
   char *text = lexer->buffer;
   size_t len = strlen(text);
+
+  if (strcmp(text, "load") == 0) {
+    // TODO: loading source files
+    compile_error(lexer, "'load' nyi");
+    return 1;
+  }
 
   // Compile a definition
   if (strcmp(text, "def") == 0) {
@@ -318,14 +338,13 @@ static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
   case GTOK_RPAREN:
   case GTOK_RBRACKET:
   case GTOK_RBRACE:
-    fprintf(stderr, "compiler: unexpected token '%c'\n", lexer->kind);
+    compile_error(lexer, "unexpected token '%c'", lexer->kind);
     return 1;
   case GTOK_INVALID:
-    fprintf(stderr, "compiler: lexing error at line %d, column %d\n",
-            lexer->current_row, lexer->current_col + 1);
+    compile_error(lexer, "invalid token");
     return 1;
   default:
-    fprintf(stderr, "compiler: unhandled token type '%c'\n", lexer->kind);
+    compile_error(lexer, "unhandled token type '%c'", lexer->kind);
     return 1;
   }
 }

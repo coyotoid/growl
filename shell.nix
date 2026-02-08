@@ -15,5 +15,6 @@ pkgs.mkShell {
     valgrind
     muon
     samurai
+    tokei
   ];
 }
