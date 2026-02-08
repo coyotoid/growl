@@ -77,6 +77,21 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
     OPCODE1(COMPOSE);
     OPCODE1(CURRY);
     OPCODE1(PPRINT);
+    OPCODE1(ADD);
+    OPCODE1(MUL);
+    OPCODE1(SUB);
+    OPCODE1(DIV);
+    OPCODE1(MOD);
+    OPCODE1(BAND);
+    OPCODE1(BOR);
+    OPCODE1(BXOR);
+    OPCODE1(BNOT);
+    OPCODE1(EQ);
+    OPCODE1(NEQ);
+    OPCODE1(LT);
+    OPCODE1(LTE);
+    OPCODE1(GT);
+    OPCODE1(GTE);
   default:
     printf("%d\n", opcode);
     return offset;
