@@ -9,3 +9,10 @@ uint32_t growl_type(Growl obj) {
   return hdr->type;
 }
 
+int growl_equals(Growl a, Growl b) {
+  if (a != b)
+    return 0;
+  if (growl_type(a) != growl_type(b))
+    return 0;
+  return 1;
+}

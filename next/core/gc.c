@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define GC_DEBUG 0
 #define ALIGN(n) (((n) + 7) & ~7)
 
 static int in_from(GrowlVM *vm, void *ptr) {
@@ -54,13 +55,14 @@ GrowlObjectHeader *growl_gc_alloc(GrowlVM *vm, size_t size) {
   }
   GrowlObjectHeader *hdr = (GrowlObjectHeader *)vm->from.free;
   vm->from.free += size;
+  memset(hdr, 0, size);
   hdr->size = size;
   return hdr;
 }
 
 GrowlObjectHeader *growl_gc_alloc_tenured(GrowlVM *vm, size_t size) {
   size = ALIGN(size);
-  GrowlObjectHeader *hdr = growl_arena_alloc(&vm->arena, size, 8, 1);
+  GrowlObjectHeader *hdr = growl_arena_alloc(&vm->tenured, size, 8, 1);
   hdr->size = size;
   return hdr;
 }
@@ -110,24 +112,32 @@ static void scan(GrowlVM *vm, GrowlObjectHeader *hdr) {
   }
 }
 
+#if GC_DEBUG
 static void gc_print_stats(GrowlVM *vm, const char *label) {
   size_t nursery_used = vm->from.free - vm->from.start;
   size_t nursery_total = vm->from.end - vm->from.start;
-  size_t tenured_used = vm->arena.free - vm->arena.start;
-  size_t tenured_total = vm->arena.end - vm->arena.start;
+  size_t tenured_used = vm->tenured.free - vm->tenured.start;
+  size_t tenured_total = vm->tenured.end - vm->tenured.start;
+  size_t arena_used = vm->arena.free - vm->arena.start;
+  size_t arena_total = vm->arena.end - vm->arena.start;
 
   fprintf(stderr, "%s:\n", label);
+  fprintf(stderr, "  arena:   %zu/%zu bytes (%.1f%%)\n", arena_used,
+          arena_total, (double)arena_used / (double)arena_total * 100.0);
   fprintf(stderr, "  tenured: %zu/%zu bytes (%.1f%%)\n", tenured_used,
-          nursery_total, (double)tenured_used / (double)tenured_total * 100.0);
+          tenured_total, (double)tenured_used / (double)tenured_total * 100.0);
   fprintf(stderr, "  nursery: %zu/%zu bytes (%.1f%%)\n", nursery_used,
           nursery_total, (double)nursery_used / (double)nursery_total * 100.0);
 }
+#endif
 
 void growl_gc_collect(GrowlVM *vm) {
   uint8_t *gc_scan = vm->to.free;
 
+#if GC_DEBUG
   fprintf(stderr, ">>> starting garbage collection\n");
   gc_print_stats(vm, "before GC");
+#endif
 
   for (size_t i = 0; i < GROWL_STACK_SIZE; ++i) {
     vm->wst[i] = forward(vm, vm->wst[i]);
@@ -137,11 +147,11 @@ void growl_gc_collect(GrowlVM *vm) {
     *vm->roots[i] = forward(vm, *vm->roots[i]);
   }
 
-  uint8_t *arena_scan = vm->arena.start;
-  while (arena_scan < vm->arena.free) {
-    GrowlObjectHeader *hdr = (GrowlObjectHeader *)arena_scan;
+  uint8_t *tenured_scan = vm->tenured.start;
+  while (tenured_scan < vm->tenured.free) {
+    GrowlObjectHeader *hdr = (GrowlObjectHeader *)tenured_scan;
     scan(vm, hdr);
-    arena_scan += ALIGN(hdr->size);
+    tenured_scan += ALIGN(hdr->size);
   }
 
   while (gc_scan < vm->to.free) {
@@ -170,14 +180,16 @@ void growl_gc_collect(GrowlVM *vm) {
     gc_scan += ALIGN(hdr->size);
   }
 
-  GrowlGCArena tmp = vm->from;
+  GrowlArena tmp = vm->from;
   vm->from = vm->to;
   vm->to = tmp;
   vm->to.free = vm->to.start;
   vm->scratch.free = vm->scratch.start;
 
+#if GC_DEBUG
   gc_print_stats(vm, "after GC");
-  fprintf(stderr, ">>> garbage collection finished\n");
+  fprintf(stderr, ">>> garbage collection done\n");
+#endif
 }
 
 void growl_gc_root(GrowlVM *vm, Growl *ptr) {
@@ -185,7 +197,7 @@ void growl_gc_root(GrowlVM *vm, Growl *ptr) {
     size_t cap = vm->root_capacity == 0 ? 16 : vm->root_capacity * 2;
     Growl **data = realloc(vm->roots, cap * sizeof(Growl *));
     if (!data) {
-      fprintf(stderr, "expanding roots array: oom\n");
+      fprintf(stderr, "roots: oom\n");
       abort();
     }
     vm->root_capacity = cap;

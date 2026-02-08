@@ -4,6 +4,7 @@
 #include <setjmp.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef uintptr_t Growl;
 
@@ -18,13 +19,18 @@ typedef struct GrowlObjectHeader GrowlObjectHeader;
 typedef struct GrowlString GrowlString;
 typedef struct GrowlList GrowlList;
 typedef struct GrowlTuple GrowlTuple;
+typedef struct GrowlTable GrowlTable;
 typedef struct GrowlQuotation GrowlQuotation;
 typedef struct GrowlCompose GrowlCompose;
 typedef struct GrowlCurry GrowlCurry;
 typedef struct GrowlAlienType GrowlAlienType;
 typedef struct GrowlAlien GrowlAlien;
-typedef struct GrowlGCArena GrowlGCArena;
+typedef struct GrowlLexer GrowlLexer;
+typedef struct GrowlArena GrowlArena;
 typedef struct GrowlFrame GrowlFrame;
+typedef struct GrowlDictionary GrowlDictionary;
+typedef struct GrowlDefinition GrowlDefinition;
+typedef struct GrowlDefinitionTable GrowlDefinitionTable;
 typedef struct GrowlVM GrowlVM;
 
 enum {
@@ -33,6 +39,7 @@ enum {
   GROWL_TYPE_STRING,
   GROWL_TYPE_LIST,
   GROWL_TYPE_TUPLE,
+  GROWL_TYPE_TABLE,
   GROWL_TYPE_QUOTATION,
   GROWL_TYPE_COMPOSE,
   GROWL_TYPE_CURRY,
@@ -40,6 +47,12 @@ enum {
 };
 
 uint32_t growl_type(Growl obj);
+uint64_t growl_hash_combine(uint64_t a, uint64_t b);
+uint64_t growl_hash_bytes(const uint8_t *data, size_t len);
+uint64_t growl_hash(Growl obj);
+void growl_print_to(FILE *file, Growl value);
+void growl_print(Growl value);
+void growl_println(Growl value);
 
 struct GrowlObjectHeader {
   size_t size;
@@ -65,6 +78,11 @@ struct GrowlTuple {
 };
 
 GrowlTuple *growl_unwrap_tuple(Growl obj);
+
+struct GrowlTable {};
+
+GrowlTable *growl_unwrap_table(Growl obj);
+GrowlTable *growl_table_upsert(GrowlVM *vm, GrowlTable **table, Growl key);
 
 struct GrowlQuotation {
   size_t count;
@@ -102,15 +120,45 @@ struct GrowlAlien {
 Growl growl_make_alien(GrowlVM *vm, GrowlAlienType *type, void *data);
 GrowlAlien *growl_unwrap_alien(Growl obj, GrowlAlienType *type);
 
-struct GrowlGCArena {
+/** Lexer */
+enum {
+  GTOK_INVALID = -1,
+  GTOK_EOF = 0,
+  GTOK_WORD = 'a',
+  GTOK_STRING = '"',
+  GTOK_SEMICOLON = ';',
+  GTOK_LPAREN = '(',
+  GTOK_RPAREN = ')',
+  GTOK_LBRACKET = '[',
+  GTOK_RBRACKET = ']',
+  GTOK_LBRACE = '{',
+  GTOK_RBRACE = '}',
+};
+
+#define GROWL_LEXER_BUFSIZE 256
+
+struct GrowlLexer {
+  int kind;
+  int cursor;
+  int current_row, current_col;
+  int start_row, start_col;
+  FILE *file;
+  char buffer[GROWL_LEXER_BUFSIZE];
+};
+
+int growl_lexer_next(GrowlLexer *lexer);
+
+struct GrowlArena {
   uint8_t *start, *end;
   uint8_t *free;
 };
 
-void growl_arena_init(GrowlGCArena *arena, size_t size);
-void growl_arena_free(GrowlGCArena *arena);
-void *growl_arena_alloc(GrowlGCArena *arena, size_t size, size_t align,
+void growl_arena_init(GrowlArena *arena, size_t size);
+void growl_arena_free(GrowlArena *arena);
+void *growl_arena_alloc(GrowlArena *arena, size_t size, size_t align,
                         size_t count);
+char *growl_arena_strdup(GrowlArena *ar, const char *str);
+
 #define growl_arena_new(a, t, n)                                               \
   (t *)growl_arena_alloc(a, sizeof(t), _Alignof(t), n)
 
@@ -126,19 +174,43 @@ struct GrowlFrame {
   Growl next;
 };
 
-struct GrowlVM {
-  GrowlGCArena from, to;
-  GrowlGCArena arena;
-  GrowlGCArena scratch;
-
+struct GrowlDefinition {
+  const char *name;
   GrowlQuotation *quotation;
+};
+
+struct GrowlDefinitionTable {
+  GrowlDefinition *data;
+  size_t count, capacity;
+};
+
+struct GrowlDictionary {
+  GrowlDictionary *child[4];
+  const char *name;
+  GrowlQuotation *quotation;
+  size_t index;
+};
+
+GrowlDictionary *growl_dictionary_upsert(GrowlDictionary **dict,
+                                         const char *name, GrowlArena *perm);
+
+struct GrowlVM {
+  GrowlArena from, to;
+  GrowlArena tenured;
+  GrowlArena scratch;
+  GrowlArena arena;
+
+  GrowlDictionary *dictionary;
+  GrowlDefinitionTable defs;
+
+  GrowlQuotation *current_quotation;
   uint8_t *ip;
   Growl wst[GROWL_STACK_SIZE], *sp;
   Growl rst[GROWL_STACK_SIZE], *rsp;
   GrowlFrame cst[GROWL_CALL_STACK_SIZE], *csp;
 
   GrowlQuotation *compose_trampoline;
-  Growl next;
+  Growl compose_next;
 
   Growl **roots;
   size_t root_count, root_capacity;
@@ -154,6 +226,10 @@ void growl_gc_collect(GrowlVM *vm);
 void growl_gc_root(GrowlVM *vm, Growl *ptr);
 size_t growl_gc_mark(GrowlVM *vm);
 void growl_gc_reset(GrowlVM *vm, size_t mark);
-int vm_doquot(GrowlVM *vm, GrowlQuotation *quot);
+int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot);
+
+/** Compiler */
+Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer);
+void growl_disassemble(GrowlVM *vm, GrowlQuotation *quot);
 
 #endif // GROWL_H

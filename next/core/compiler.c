@@ -1,2 +1,344 @@
 #include <growl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "opcodes.h"
+#include "sleb128.h"
+
+typedef struct {
+  Growl *data;
+  size_t count;
+  size_t capacity;
+} ConstantTable;
+
+typedef struct {
+  uint8_t *data;
+  size_t count;
+  size_t capacity;
+
+  ConstantTable constants;
+} Chunk;
+
+typedef struct {
+  const char *name;
+  uint8_t opcodes[8];
+} Primitive;
+
+// clang-format off
+Primitive primitives[] = {
+  {"nil",     {GOP_PUSH_NIL, 0}},
+  {"drop",    {GOP_DROP, 0}},
+  {"dup",     {GOP_DUP, 0}},
+  {"swap",    {GOP_SWAP, 0}},
+  {"2drop",   {GOP_2DROP, 0}},
+  {"2dup",    {GOP_2DUP, 0}},
+  {"2swap",   {GOP_2SWAP, 0}},
+  {"nip",     {GOP_NIP, 0}},
+  {"over",    {GOP_OVER, 0}},
+  {"bury",    {GOP_BURY, 0}},
+  {"dig",     {GOP_DIG, 0}},
+  {">r",      {GOP_TO_RETAIN, 0}},
+  {"r>",      {GOP_FROM_RETAIN, 0}},
+  {"call",    {GOP_CALL, 0}},
+  {"compose", {GOP_COMPOSE, 0}},
+  {"curry",   {GOP_CURRY, 0}},
+  {".",       {GOP_PPRINT, 0}},
+  {"+",       {GOP_ADD, 0}},
+  {"*",       {GOP_MUL, 0}},
+  {"-",       {GOP_SUB, 0}},
+  {"/",       {GOP_DIV, 0}},
+  {"%",       {GOP_MOD, 0}},
+  {"=",       {GOP_EQ, 0}},
+  {"!=",      {GOP_NEQ, 0}},
+  {"<",       {GOP_LT, 0}},
+  {"<=",      {GOP_LTE, 0}},
+  {">",       {GOP_GT, 0}},
+  {">=",      {GOP_GTE, 0}},
+  {"&",       {GOP_BAND, 0}},
+  {"|",       {GOP_BOR, 0}},
+  {"^",       {GOP_BXOR, 0}},
+  {"~",       {GOP_BNOT, 0}},
+  {NULL,      {0}}
+};
+// clang-format on
+
+// See https://nullprogram.com/blog/2023/10/05/
+#define push(s, a)                                                             \
+  ({                                                                           \
+    typeof(s) s_ = (s);                                                        \
+    typeof(a) a_ = (a);                                                        \
+    if (s_->count >= s_->capacity) {                                           \
+      grow(s_, sizeof(*s_->data), _Alignof(*s_->data), a_);                    \
+    }                                                                          \
+    s_->data + s_->count++;                                                    \
+  })
+
+static void grow(void *slice, ptrdiff_t size, ptrdiff_t align, GrowlArena *a) {
+  struct {
+    char *data;
+    ptrdiff_t len;
+    ptrdiff_t cap;
+  } replica;
+  memcpy(&replica, slice, sizeof(replica));
+
+  if (!replica.data) {
+    replica.cap = 1;
+    replica.data = growl_arena_alloc(a, 2 * size, align, replica.cap);
+  } else if (a->free == (uint8_t *)replica.data + size * replica.cap) {
+    growl_arena_alloc(a, size, 1, replica.cap);
+  } else {
+    void *data = growl_arena_alloc(a, 2 * size, align, replica.cap);
+    memcpy(data, replica.data, size * replica.len);
+    replica.data = data;
+  }
+
+  replica.cap *= 2;
+  memcpy(slice, &replica, sizeof(replica));
+}
+
+static void emit_byte(GrowlVM *vm, Chunk *chunk, uint8_t byte) {
+  *push(chunk, &vm->scratch) = byte;
+}
+
+static void emit_sleb128(GrowlVM *vm, Chunk *chunk, intptr_t num) {
+  int more = 1;
+  while (more) {
+    uint8_t byte = num & 0x7f;
+    num >>= 7;
+    if ((num == 0 && !(byte & 0x40)) || (num == -1 && (byte & 0x40))) {
+      more = 0;
+    } else {
+      byte |= 0x80;
+    }
+    emit_byte(vm, chunk, byte);
+  }
+}
+
+static size_t add_constant(GrowlVM *vm, Chunk *chunk, Growl value) {
+  for (size_t i = 0; i < chunk->constants.count; ++i) {
+    if (chunk->constants.data[i] == value)
+      return i;
+  }
+  *push(&chunk->constants, &vm->scratch) = value;
+  return chunk->constants.count - 1;
+}
+
+static int is_integer(const char *str, long *out) {
+  char *end;
+  long val = strtol(str, &end, 0);
+  if (*end == '\0' && end != str) {
+    *out = val;
+    return 1;
+  }
+  return 0;
+}
+
+static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk);
+
+static void optimize_tail_calls(Chunk *chunk) {
+  size_t i = 0;
+  while (i < chunk->count) {
+    uint8_t opcode = chunk->data[i];
+    size_t start = i++;
+    if (opcode == GOP_PUSH_CONSTANT || opcode == GOP_WORD ||
+        opcode == GOP_TAIL_WORD) {
+      if (i < chunk->count)
+        i += growl_sleb128_peek(&chunk->data[i], NULL);
+    }
+    if (i < chunk->count && chunk->data[i] == GOP_RETURN) {
+      if (opcode == GOP_CALL) {
+        chunk->data[i] = GOP_NOP;
+        chunk->data[start] = GOP_TAIL_CALL;
+      } else if (opcode == GOP_WORD) {
+        chunk->data[i] = GOP_NOP;
+        chunk->data[start] = GOP_TAIL_WORD;
+      }
+    }
+  }
+}
+
+static int compile_quotation(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
+  growl_lexer_next(lexer); // skip '['
+  Chunk quot_chunk = {0};
+
+  while (lexer->kind != ']' && lexer->kind != GTOK_EOF &&
+         lexer->kind != GTOK_INVALID) {
+    if (compile_token(vm, lexer, &quot_chunk)) {
+      return 1;
+    }
+  }
+  if (lexer->kind != ']') {
+    fprintf(stderr, "error: expected ']' to close quotation\n");
+    return 1;
+  }
+
+  emit_byte(vm, &quot_chunk, GOP_RETURN);
+  optimize_tail_calls(&quot_chunk);
+  Growl quot = growl_make_quotation(vm, quot_chunk.data, quot_chunk.count,
+                                    quot_chunk.constants.data,
+                                    quot_chunk.constants.count);
+  size_t idx = add_constant(vm, chunk, quot);
+  emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(vm, chunk, (intptr_t)idx);
+  growl_lexer_next(lexer);
+  return 0;
+}
+
+static int compile_string(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
+  Growl str = growl_wrap_string(vm, lexer->buffer);
+  size_t const_idx = add_constant(vm, chunk, str);
+  emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(vm, chunk, (intptr_t)const_idx);
+  growl_lexer_next(lexer);
+  return 0;
+}
+
+static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
+  growl_lexer_next(lexer);
+  if (lexer->kind != GTOK_WORD) {
+    fprintf(stderr, "compiler: expected name after 'def'\n");
+    return 1;
+  }
+
+  char *name = growl_arena_strdup(&vm->scratch, lexer->buffer);
+  growl_lexer_next(lexer);
+  if (lexer->kind != GTOK_LBRACE) {
+    fprintf(stderr, "compiler: expected '{' after def name\n");
+    return 1;
+  }
+
+  growl_lexer_next(lexer);
+  Chunk fn_chunk = {0};
+  while (lexer->kind != GTOK_RBRACE && lexer->kind != GTOK_EOF &&
+         lexer->kind != GTOK_INVALID) {
+    if (compile_token(vm, lexer, &fn_chunk)) {
+      return 1;
+    }
+  }
+
+  if (lexer->kind != GTOK_RBRACE) {
+    fprintf(stderr, "error: expected '}' to close def\n");
+    return 1;
+  }
+
+  emit_byte(vm, &fn_chunk, GOP_RETURN);
+  optimize_tail_calls(&fn_chunk);
+  Growl fn =
+      growl_make_quotation(vm, fn_chunk.data, fn_chunk.count,
+                           fn_chunk.constants.data, fn_chunk.constants.count);
+  GrowlQuotation *quot = (GrowlQuotation *)(GROWL_UNBOX(fn) + 1);
+  GrowlDictionary *entry =
+      growl_dictionary_upsert(&vm->dictionary, name, &vm->arena);
+  GrowlDefinition *def = push(&vm->defs, &vm->arena);
+  def->name = growl_arena_strdup(&vm->arena, name);
+  def->quotation = quot;
+  entry->quotation = quot;
+  entry->index = vm->defs.count - 1;
+
+  growl_lexer_next(lexer);
+  return 0;
+}
+
+static int compile_call(GrowlVM *vm, GrowlLexer *lexer, const char *name,
+                        Chunk *chunk) {
+  for (size_t i = 0; primitives[i].name != NULL; i++) {
+    if (strcmp(name, primitives[i].name) == 0) {
+      for (size_t j = 0; primitives[i].opcodes[j] != 0; j++)
+        emit_byte(vm, chunk, primitives[i].opcodes[j]);
+      growl_lexer_next(lexer);
+      return 0;
+    }
+  }
+
+  GrowlDictionary *entry = growl_dictionary_upsert(&vm->dictionary, name, NULL);
+  if (entry == NULL) {
+    fprintf(stderr, "compiler: undefined word '%s'\n", name);
+    return 1;
+  }
+  emit_byte(vm, chunk, GOP_WORD);
+  emit_sleb128(vm, chunk, entry->index);
+  growl_lexer_next(lexer);
+  return 0;
+}
+
+static int compile_command(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
+  char *name = growl_arena_strdup(&vm->scratch, lexer->buffer);
+  name[strlen(name) - 1] = '\0';
+  growl_lexer_next(lexer);
+  while (lexer->kind != GTOK_SEMICOLON && lexer->kind != GTOK_EOF &&
+         lexer->kind != GTOK_INVALID) {
+    if (compile_token(vm, lexer, chunk)) {
+      return 1;
+    }
+  }
+  if (lexer->kind != GTOK_SEMICOLON) {
+    fprintf(stderr, "compiler: expected ';' to close command\n");
+    return 1;
+  }
+  return compile_call(vm, lexer, name, chunk);
+}
+
+static int compile_word(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
+  char *text = lexer->buffer;
+  size_t len = strlen(text);
+
+  // Compile a definition
+  if (strcmp(text, "def") == 0) {
+    return compile_def(vm, lexer);
+  }
+
+  // Compile a command: word: args... ;
+  if (len > 1 && text[len - 1] == ':') {
+    return compile_command(vm, lexer, chunk);
+  }
+
+  // Compile an integer value
+  long value;
+  if (is_integer(text, &value)) {
+    size_t idx = add_constant(vm, chunk, GROWL_NUM(value));
+    emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
+    emit_sleb128(vm, chunk, (intptr_t)idx);
+    growl_lexer_next(lexer);
+    return 0;
+  }
+
+  return compile_call(vm, lexer, text, chunk);
+}
+
+static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
+  switch (lexer->kind) {
+  case GTOK_WORD:
+    return compile_word(vm, lexer, chunk);
+  case GTOK_STRING:
+    return compile_string(vm, lexer, chunk);
+  case GTOK_LBRACKET:
+    return compile_quotation(vm, lexer, chunk);
+  case GTOK_SEMICOLON:
+  case GTOK_RPAREN:
+  case GTOK_RBRACKET:
+  case GTOK_RBRACE:
+    fprintf(stderr, "compiler: unexpected token '%c'\n", lexer->kind);
+    return 1;
+  case GTOK_INVALID:
+    fprintf(stderr, "compiler: lexing error at line %d, column %d\n",
+            lexer->current_row, lexer->current_col + 1);
+    return 1;
+  default:
+    fprintf(stderr, "compiler: unhandled token type '%c'\n", lexer->kind);
+    return 1;
+  }
+}
+
+Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer) {
+  Chunk chunk = {0};
+  growl_lexer_next(lexer);
+  while (lexer->kind != GTOK_EOF) {
+    if (compile_token(vm, lexer, &chunk))
+      return GROWL_NIL;
+  }
+  emit_byte(vm, &chunk, GOP_RETURN);
+  optimize_tail_calls(&chunk);
+  return growl_make_quotation(vm, chunk.data, chunk.count, chunk.constants.data,
+                              chunk.constants.count);
+}

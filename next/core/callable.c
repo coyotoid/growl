@@ -17,16 +17,23 @@ int growl_callable(Growl obj) {
 
 Growl growl_make_quotation(GrowlVM *vm, const uint8_t *code, size_t code_size,
                            const Growl *constants, size_t constants_size) {
-  size_t constants_obj_size = sizeof(GrowlObjectHeader) + sizeof(GrowlTuple) +
-                              constants_size * sizeof(Growl);
-  GrowlObjectHeader *constants_hdr =
-      growl_gc_alloc_tenured(vm, constants_obj_size);
-  constants_hdr->type = GROWL_TYPE_TUPLE;
-  GrowlTuple *constants_tuple = (GrowlTuple *)(constants_hdr + 1);
+  Growl constants_obj;
 
-  constants_tuple->count = constants_size;
-  for (size_t i = 0; i < constants_size; ++i) {
-    constants_tuple->data[i] = constants[i];
+  if (constants_size == 0) {
+    constants_obj = GROWL_NIL;
+  } else {
+    size_t constants_obj_size = sizeof(GrowlObjectHeader) + sizeof(GrowlTuple) +
+                                constants_size * sizeof(Growl);
+    GrowlObjectHeader *constants_hdr =
+        growl_gc_alloc_tenured(vm, constants_obj_size);
+    constants_hdr->type = GROWL_TYPE_TUPLE;
+    GrowlTuple *constants_tuple = (GrowlTuple *)(constants_hdr + 1);
+
+    constants_tuple->count = constants_size;
+    for (size_t i = 0; i < constants_size; ++i) {
+      constants_tuple->data[i] = constants[i];
+    }
+    constants_obj = GROWL_BOX(constants_hdr);
   }
 
   size_t quotation_obj_size =
@@ -36,7 +43,7 @@ Growl growl_make_quotation(GrowlVM *vm, const uint8_t *code, size_t code_size,
   quotation_hdr->type = GROWL_TYPE_QUOTATION;
   GrowlQuotation *quotation = (GrowlQuotation *)(quotation_hdr + 1);
 
-  quotation->constants = GROWL_BOX(constants_hdr);
+  quotation->constants = constants_obj;
   quotation->count = code_size;
   memcpy(quotation->data, code, code_size);
 
@@ -57,12 +64,16 @@ Growl growl_compose(GrowlVM *vm, Growl first, Growl second) {
     return GROWL_NIL;
   if (!growl_callable(second))
     return GROWL_NIL;
+  size_t mark = growl_gc_mark(vm);
+  growl_gc_root(vm, &first);
+  growl_gc_root(vm, &second);
   size_t size = sizeof(GrowlObjectHeader) + sizeof(GrowlCompose);
   GrowlObjectHeader *hdr = growl_gc_alloc(vm, size);
   hdr->type = GROWL_TYPE_COMPOSE;
   GrowlCompose *comp = (GrowlCompose *)(hdr + 1);
   comp->first = first;
   comp->second = second;
+  growl_gc_reset(vm, mark);
   return GROWL_BOX(hdr);
 }
 
@@ -78,12 +89,16 @@ GrowlCompose *growl_unwrap_compose(Growl obj) {
 Growl growl_curry(GrowlVM *vm, Growl value, Growl callable) {
   if (!growl_callable(callable))
     return GROWL_NIL;
+  size_t mark = growl_gc_mark(vm);
+  growl_gc_root(vm, &value);
+  growl_gc_root(vm, &callable);
   size_t size = sizeof(GrowlObjectHeader) + sizeof(GrowlCurry);
   GrowlObjectHeader *hdr = growl_gc_alloc(vm, size);
   hdr->type = GROWL_TYPE_CURRY;
   GrowlCurry *comp = (GrowlCurry *)(hdr + 1);
   comp->value = value;
   comp->callable = callable;
+  growl_gc_reset(vm, mark);
   return GROWL_BOX(hdr);
 }
 
