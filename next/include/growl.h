@@ -46,18 +46,21 @@ enum {
   GROWL_TYPE_ALIEN,
 };
 
-uint32_t growl_type(Growl obj);
-uint64_t growl_hash_combine(uint64_t a, uint64_t b);
-uint64_t growl_hash_bytes(const uint8_t *data, size_t len);
-uint64_t growl_hash(Growl obj);
-void growl_print_to(FILE *file, Growl value);
-void growl_print(Growl value);
-void growl_println(Growl value);
-
 struct GrowlObjectHeader {
   size_t size;
   uint32_t type;
 };
+
+uint32_t growl_type(Growl obj);
+uint64_t growl_hash_combine(uint64_t a, uint64_t b);
+uint64_t growl_hash_bytes(const uint8_t *data, size_t len);
+uint64_t growl_hash(Growl obj);
+
+void growl_print_to(FILE *file, Growl value);
+void growl_print(Growl value);
+void growl_println(Growl value);
+
+int growl_equals(Growl a, Growl b);
 
 struct GrowlString {
   size_t len;

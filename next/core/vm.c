@@ -109,21 +109,11 @@ static GrowlFrame callstack_pop(GrowlVM *vm) {
   return *--vm->csp;
 }
 
-static void root_constants(GrowlVM *vm, GrowlQuotation *quot) {
-  GrowlTuple *constants = growl_unwrap_tuple(quot->constants);
-  if (constants != NULL) {
-    for (size_t i = 0; i < constants->count; ++i) {
-      growl_gc_root(vm, &constants->data[i]);
-    }
-  }
-}
-
 static inline void dispatch(GrowlVM *vm, Growl obj) {
   for (;;) {
     switch (growl_type(obj)) {
     case GROWL_TYPE_QUOTATION: {
       GrowlQuotation *q = (GrowlQuotation *)(GROWL_UNBOX(obj) + 1);
-      root_constants(vm, q);
       vm->current_quotation = q;
       vm->ip = q->data;
       return;
@@ -155,8 +145,6 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     growl_gc_reset(vm, gc_mark);
     return result;
   }
-
-  root_constants(vm, quot);
 
   vm->ip = quot->data;
   vm->current_quotation = quot;
@@ -334,7 +322,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     if (GROWL_IMM(b) && GROWL_IMM(a)) {                                        \
       growl_push(vm, GROWL_NUM(GROWL_ORD(a) op GROWL_ORD(b)));                 \
     } else {                                                                   \
-      vm_error(vm, "arithmetic on non-numbers");                               \
+      vm_error(vm, "numeric op on non-numbers");                               \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -350,7 +338,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
         vm_error(vm, "division by zero");
       growl_push(vm, GROWL_NUM(GROWL_ORD(a) / GROWL_ORD(b)));
     } else {
-      vm_error(vm, "arithmetic on non-numbers");
+      vm_error(vm, "numeric op on non-numbers");
     };
     VM_NEXT();
   }
@@ -362,7 +350,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
         vm_error(vm, "division by zero");
       growl_push(vm, GROWL_NUM(GROWL_ORD(a) % GROWL_ORD(b)));
     } else {
-      vm_error(vm, "arithmetic on non-numbers");
+      vm_error(vm, "numeric op on non-numbers");
     };
     VM_NEXT();
   }
@@ -375,6 +363,28 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
       growl_push(vm, GROWL_NUM(~GROWL_ORD(a)));
     } else {
       vm_error(vm, "arithmetic on non-numbers");
+    }
+    VM_NEXT();
+  }
+  VM_OP(EQ) {
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    int equals = growl_equals(a, b);
+    if (equals) {
+      growl_push(vm, GROWL_NUM(1));
+    } else {
+      growl_push(vm, GROWL_NIL);
+    }
+    VM_NEXT();
+  }
+  VM_OP(NEQ) {
+    Growl b = growl_pop(vm);
+    Growl a = growl_pop(vm);
+    int equals = growl_equals(a, b);
+    if (!equals) {
+      growl_push(vm, GROWL_NUM(1));
+    } else {
+      growl_push(vm, GROWL_NIL);
     }
     VM_NEXT();
   }
