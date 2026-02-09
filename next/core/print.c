@@ -8,57 +8,56 @@ void growl_println(Growl value) {
   putchar('\n');
 }
 
-static void print_escaped(const char *data, size_t len) {
-  putchar('"');
+static void print_escaped(FILE *file, const char *data, size_t len) {
+  putc('"', file);
   for (size_t i = 0; i < len; ++i) {
     switch (data[i]) {
     case '\0':
-      putchar('\\');
-      putchar('0');
+      putc('\\', file);
+      putc('0', file);
       break;
     case '\t':
-      putchar('\\');
-      putchar('t');
+      putc('\\', file);
+      putc('t', file);
       break;
     case '\n':
-      putchar('\\');
-      putchar('n');
+      putc('\\', file);
+      putc('n', file);
       break;
     case '\r':
-      putchar('\\');
-      putchar('r');
+      putc('\\', file);
+      putc('r', file);
       break;
     case '\b':
-      putchar('\\');
-      putchar('b');
+      putc('\\', file);
+      putc('b', file);
       break;
     case '\v':
-      putchar('\\');
-      putchar('v');
+      putc('\\', file);
+      putc('v', file);
       break;
     case '\f':
-      putchar('\\');
-      putchar('f');
+      putc('\\', file);
+      putc('f', file);
       break;
     case '\x1b':
-      putchar('\\');
-      putchar('e');
+      putc('\\', file);
+      putc('e', file);
       break;
     case '\\':
-      putchar('\\');
-      putchar('\\');
+      putc('\\', file);
+      putc('\\', file);
       break;
     case '"':
-      putchar('\\');
-      putchar('"');
+      putc('\\', file);
+      putc('"', file);
       break;
     default:
-      putchar(data[i]);
+      putc(data[i], file);
       break;
-
     }
   }
-  putchar('"');
+  putc('"', file);
 }
 
 void growl_print_to(FILE *file, Growl value) {
@@ -71,7 +70,7 @@ void growl_print_to(FILE *file, Growl value) {
     switch (hdr->type) {
     case GROWL_TYPE_STRING: {
       GrowlString *str = (GrowlString *)(hdr + 1);
-      print_escaped(str->data, str->len);
+      print_escaped(file, str->data, str->len);
       break;
     }
     default:

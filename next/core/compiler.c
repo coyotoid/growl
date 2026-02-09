@@ -6,6 +6,9 @@
 
 #include "opcodes.h"
 #include "sleb128.h"
+#include "dynarray.h"
+
+#define COMPILER_DEBUG 0
 
 typedef struct {
   Growl *data;
@@ -46,12 +49,15 @@ Primitive primitives[] = {
   {"call",    {GOP_CALL, 0}},
   {"compose", {GOP_COMPOSE, 0}},
   {"curry",   {GOP_CURRY, 0}},
+  {"dip",     {GOP_DIP, 0}},
   {".",       {GOP_PPRINT, 0}},
   {"+",       {GOP_ADD, 0}},
   {"*",       {GOP_MUL, 0}},
   {"-",       {GOP_SUB, 0}},
   {"/",       {GOP_DIV, 0}},
   {"%",       {GOP_MOD, 0}},
+  {"and",     {GOP_AND, 0}},
+  {"or",      {GOP_OR, 0}},
   {"=",       {GOP_EQ, 0}},
   {"!=",      {GOP_NEQ, 0}},
   {"<",       {GOP_LT, 0}},
@@ -65,40 +71,6 @@ Primitive primitives[] = {
   {NULL,      {0}}
 };
 // clang-format on
-
-// See https://nullprogram.com/blog/2023/10/05/
-#define push(s, a)                                                             \
-  ({                                                                           \
-    typeof(s) s_ = (s);                                                        \
-    typeof(a) a_ = (a);                                                        \
-    if (s_->count >= s_->capacity) {                                           \
-      grow(s_, sizeof(*s_->data), _Alignof(*s_->data), a_);                    \
-    }                                                                          \
-    s_->data + s_->count++;                                                    \
-  })
-
-static void grow(void *slice, ptrdiff_t size, ptrdiff_t align, GrowlArena *a) {
-  struct {
-    uint8_t *data;
-    ptrdiff_t len;
-    ptrdiff_t cap;
-  } replica;
-  memcpy(&replica, slice, sizeof(replica));
-
-  if (!replica.data) {
-    replica.cap = 1;
-    replica.data = growl_arena_alloc(a, 2 * size, align, replica.cap);
-  } else if (a->free == replica.data + size * replica.cap) {
-    growl_arena_alloc(a, size, 1, replica.cap);
-  } else {
-    void *data = growl_arena_alloc(a, 2 * size, align, replica.cap);
-    memcpy(data, replica.data, size * replica.len);
-    replica.data = data;
-  }
-
-  replica.cap *= 2;
-  memcpy(slice, &replica, sizeof(replica));
-}
 
 static void emit_byte(GrowlVM *vm, Chunk *chunk, uint8_t byte) {
   *push(chunk, &vm->scratch) = byte;
@@ -160,10 +132,8 @@ static void optimize_tail_calls(Chunk *chunk) {
     }
     if (i < chunk->count && chunk->data[i] == GOP_RETURN) {
       if (opcode == GOP_CALL) {
-        chunk->data[i] = GOP_NOP;
         chunk->data[start] = GOP_TAIL_CALL;
       } else if (opcode == GOP_WORD) {
-        chunk->data[i] = GOP_NOP;
         chunk->data[start] = GOP_TAIL_WORD;
       }
     }
@@ -200,7 +170,7 @@ static int compile_quotation(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
 }
 
 static int compile_string(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  Growl str = growl_wrap_string(vm, lexer->buffer);
+  Growl str = growl_wrap_string_tenured(vm, lexer->buffer);
   size_t const_idx = add_constant(vm, chunk, str);
   emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
   emit_sleb128(vm, chunk, (intptr_t)const_idx);
@@ -222,6 +192,15 @@ static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
     return 1;
   }
 
+  // Add a forward declaration to the dictionary so the word can reference itself
+  GrowlDictionary *entry =
+      growl_dictionary_upsert(&vm->dictionary, name, &vm->arena);
+  GrowlDefinition *def = push(&vm->defs, &vm->arena);
+  def->name = growl_arena_strdup(&vm->arena, name);
+  def->callable = GROWL_NIL; // Placeholder, will be filled in after compilation
+  entry->callable = GROWL_NIL;
+  entry->index = vm->defs.count - 1;
+
   growl_lexer_next(lexer);
   Chunk fn_chunk = {0};
   while (lexer->kind != GTOK_RBRACE && lexer->kind != GTOK_EOF &&
@@ -241,14 +220,16 @@ static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
   Growl fn =
       growl_make_quotation(vm, fn_chunk.data, fn_chunk.count,
                            fn_chunk.constants.data, fn_chunk.constants.count);
-  GrowlQuotation *quot = (GrowlQuotation *)(GROWL_UNBOX(fn) + 1);
-  GrowlDictionary *entry =
-      growl_dictionary_upsert(&vm->dictionary, name, &vm->arena);
-  GrowlDefinition *def = push(&vm->defs, &vm->arena);
-  def->name = growl_arena_strdup(&vm->arena, name);
-  def->quotation = quot;
-  entry->quotation = quot;
-  entry->index = vm->defs.count - 1;
+
+#if COMPILER_DEBUG
+  GrowlQuotation *quot = growl_unwrap_quotation(fn);
+  fprintf(stderr, "=== %s ===\n", def->name);
+  growl_disassemble(vm, quot);
+#endif
+
+  // Now update the definition with the compiled quotation
+  def->callable = fn;
+  entry->callable = fn;
 
   growl_lexer_next(lexer);
   return 0;

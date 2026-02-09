@@ -51,10 +51,12 @@ growlnext_sources = [
     'next/core/compiler.c',
     'next/core/dictionary.c',
     'next/core/disasm.c',
+    'next/core/file.c',
     'next/core/gc.c',
     'next/core/hash.c',
     'next/core/lexer.c',
     'next/core/list.c',
+    'next/core/native.c',
     'next/core/print.c',
     'next/core/sleb128.c',
     'next/core/string.c',
@@ -65,9 +67,13 @@ growlnext_sources = [
     'next/main.c',
 ]
 
+cc = meson.get_compiler('c')
+m_dep = cc.find_library('m', required: false)
+
 growlnext = executable(
     'growlnext',
     growlnext_sources,
+    dependencies: [m_dep],
     include_directories: ['next/include'],
     install: true,
 )

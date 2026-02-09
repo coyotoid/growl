@@ -7,15 +7,15 @@ static void disassemble(GrowlVM *vm, GrowlQuotation *quot, int indent);
 static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
                                 size_t offset, int indent) {
   for (int i = 0; i < indent; i++) {
-    printf("  ");
+    fprintf(stderr, "  ");
   }
-  printf("%04zu ", offset);
+  fprintf(stderr, "%04zu ", offset);
 
   uint8_t opcode = quot->data[offset++];
 
   // clang-format off
 #define OPCODE(name) case GOP_## name:
-#define OPCODE1(name) case GOP_## name: printf(#name "\n"); return offset;
+#define OPCODE1(name) case GOP_## name: fprintf(stderr, #name "\n"); return offset;
   // clang-format on
 
   switch (opcode) {
@@ -24,26 +24,26 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
     OPCODE(PUSH_CONSTANT) {
       intptr_t idx;
       size_t bytes_read = growl_sleb128_peek(&quot->data[offset], &idx);
-      printf("PUSH_CONSTANT %ld", idx);
+      fprintf(stderr, "PUSH_CONSTANT %ld", idx);
       if (quot->constants != GROWL_NIL &&
           growl_type(quot->constants) == GROWL_TYPE_TUPLE) {
         GrowlTuple *constants = growl_unwrap_tuple(quot->constants);
         if (idx >= 0 && (size_t)idx < constants->count) {
           Growl constant = constants->data[idx];
-          printf(" (");
-          growl_print(constant);
-          printf(")");
+          fprintf(stderr, " (");
+          growl_print_to(stderr, constant);
+          fprintf(stderr, ")");
 
           if (!GROWL_IMM(constant) && constant != GROWL_NIL &&
               growl_type(constant) == GROWL_TYPE_QUOTATION) {
-            putchar('\n');
+            putc('\n', stderr);
             GrowlQuotation *inner = growl_unwrap_quotation(constant);
             disassemble(vm, inner, indent + 1);
             return offset + bytes_read;
           }
         }
       }
-      putchar('\n');
+      putc('\n', stderr);
       return offset + bytes_read;
     }
     OPCODE1(DROP);
@@ -61,22 +61,24 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
     OPCODE1(CHOOSE);
     OPCODE1(CALL);
     OPCODE1(CALL_NEXT);
+    OPCODE1(PUSH_NEXT);
     OPCODE1(TAIL_CALL);
     OPCODE(WORD) {
       intptr_t idx;
       size_t bytes_read = growl_sleb128_peek(&quot->data[offset], &idx);
-      printf("WORD %s\n", vm->defs.data[idx].name);
+      fprintf(stderr, "WORD %s\n", vm->defs.data[idx].name);
       return offset + bytes_read;
     }
     OPCODE(TAIL_WORD) {
       intptr_t idx;
       size_t bytes_read = growl_sleb128_peek(&quot->data[offset], &idx);
-      printf("TAIL_WORD %s\n", vm->defs.data[idx].name);
+      fprintf(stderr, "TAIL_WORD %s\n", vm->defs.data[idx].name);
       return offset + bytes_read;
     }
     OPCODE1(RETURN);
     OPCODE1(COMPOSE);
     OPCODE1(CURRY);
+    OPCODE1(DIP);
     OPCODE1(PPRINT);
     OPCODE1(ADD);
     OPCODE1(MUL);

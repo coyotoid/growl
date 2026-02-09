@@ -1,4 +1,13 @@
-#load("std.grr")
+def print { file/stdout file/write }
+def when { [] if }
+def keep { over [call] dip }
+def bi { [keep] dip call }
+
+def times {
+  if: over 0 =
+    [drop drop]
+    [swap over >r >r call r> 1 - r> times];
+}
 
 def fizzbuzz? { [3 % 0 =] [5 % 0 =] bi or }
 def fizz { when: 3 % 0 = ["Fizz" print]; }
@@ -6,7 +15,7 @@ def buzz { when: 5 % 0 = ["Buzz" print]; }
 
 def fizzbuzz1 {
   if: fizzbuzz?
-    [ [fizz] keep buzz nl ]
+    [ [fizz] keep buzz "\n" print ]
     [ . ];
 }
 

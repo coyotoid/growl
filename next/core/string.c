@@ -23,6 +23,18 @@ Growl growl_wrap_string(GrowlVM *vm, const char *cstr) {
   return GROWL_BOX(hdr);
 }
 
+Growl growl_wrap_string_tenured(GrowlVM *vm, const char *cstr) {
+  size_t len = strlen(cstr);
+  size_t size = sizeof(GrowlObjectHeader) + sizeof(GrowlString) + len + 1;
+  GrowlObjectHeader *hdr = growl_gc_alloc_tenured(vm, size);
+  hdr->type = GROWL_TYPE_STRING;
+  GrowlString *str = (GrowlString *)(hdr + 1);
+  str->len = len;
+  memcpy(str->data, cstr, len);
+  str->data[len] = 0;
+  return GROWL_BOX(hdr);
+}
+
 GrowlString *growl_unwrap_string(Growl obj) {
   if (obj == 0 || GROWL_IMM(obj))
     return NULL;

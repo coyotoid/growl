@@ -134,7 +134,7 @@ int growl_lexer_next(GrowlLexer *lexer) {
 
   switch (next) {
   case '\\':
-    for (; next != '\n'; next = getc_ws(lexer))
+    for (; next != '\n'; next = lexer_getc(lexer))
       ;
     return growl_lexer_next(lexer);
   case '(':

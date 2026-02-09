@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdnoreturn.h>
 
 typedef uintptr_t Growl;
 
@@ -28,6 +29,8 @@ typedef struct GrowlAlien GrowlAlien;
 typedef struct GrowlLexer GrowlLexer;
 typedef struct GrowlArena GrowlArena;
 typedef struct GrowlFrame GrowlFrame;
+typedef struct GrowlModule GrowlModule;
+typedef struct GrowlCompileContext GrowlCompileContext;
 typedef struct GrowlDictionary GrowlDictionary;
 typedef struct GrowlDefinition GrowlDefinition;
 typedef struct GrowlDefinitionTable GrowlDefinitionTable;
@@ -52,6 +55,8 @@ struct GrowlObjectHeader {
 };
 
 uint32_t growl_type(Growl obj);
+int growl_equals(Growl a, Growl b);
+
 uint64_t growl_hash_combine(uint64_t a, uint64_t b);
 uint64_t growl_hash_bytes(const uint8_t *data, size_t len);
 uint64_t growl_hash(Growl obj);
@@ -60,8 +65,6 @@ void growl_print_to(FILE *file, Growl value);
 void growl_print(Growl value);
 void growl_println(Growl value);
 
-int growl_equals(Growl a, Growl b);
-
 struct GrowlString {
   size_t len;
   char data[];
@@ -69,6 +72,7 @@ struct GrowlString {
 
 Growl growl_make_string(GrowlVM *vm, size_t len);
 Growl growl_wrap_string(GrowlVM *vm, const char *cstr);
+Growl growl_wrap_string_tenured(GrowlVM *vm, const char *cstr);
 GrowlString *growl_unwrap_string(Growl obj);
 
 struct GrowlList {
@@ -85,7 +89,6 @@ GrowlTuple *growl_unwrap_tuple(Growl obj);
 struct GrowlTable {};
 
 GrowlTable *growl_unwrap_table(Growl obj);
-GrowlTable *growl_table_upsert(GrowlVM *vm, GrowlTable **table, Growl key);
 
 struct GrowlQuotation {
   size_t count;
@@ -112,6 +115,7 @@ GrowlCurry *growl_unwrap_curry(Growl obj);
 
 struct GrowlAlienType {
   const char *name;
+  void (*call)(GrowlVM *, void *);
   void (*finalizer)(void *);
 };
 
@@ -121,7 +125,10 @@ struct GrowlAlien {
 };
 
 Growl growl_make_alien(GrowlVM *vm, GrowlAlienType *type, void *data);
+Growl growl_make_alien_tenured(GrowlVM *vm, GrowlAlienType *type, void *data);
 GrowlAlien *growl_unwrap_alien(Growl obj, GrowlAlienType *type);
+void growl_register_native(GrowlVM *vm, const char *name,
+                           void (*fn)(GrowlVM *));
 
 /** Lexer */
 enum {
@@ -179,7 +186,7 @@ struct GrowlFrame {
 
 struct GrowlDefinition {
   const char *name;
-  GrowlQuotation *quotation;
+  Growl callable;
 };
 
 struct GrowlDefinitionTable {
@@ -190,8 +197,18 @@ struct GrowlDefinitionTable {
 struct GrowlDictionary {
   GrowlDictionary *child[4];
   const char *name;
-  GrowlQuotation *quotation;
+  Growl callable;
   size_t index;
+};
+
+struct GrowlModule {
+  char *resolved_path;
+  GrowlModule *next;
+};
+
+struct GrowlCompileContext {
+  GrowlCompileContext *parent;
+  const char *file_path, *file_dir;
 };
 
 GrowlDictionary *growl_dictionary_upsert(GrowlDictionary **dict,
@@ -213,7 +230,9 @@ struct GrowlVM {
   GrowlFrame cst[GROWL_CALL_STACK_SIZE], *csp;
 
   GrowlQuotation *compose_trampoline;
-  Growl compose_next;
+  GrowlQuotation *return_trampoline;
+  GrowlQuotation *dip_trampoline;
+  Growl next;
 
   Growl **roots;
   size_t root_count, root_capacity;
@@ -229,10 +248,19 @@ void growl_gc_collect(GrowlVM *vm);
 void growl_gc_root(GrowlVM *vm, Growl *ptr);
 size_t growl_gc_mark(GrowlVM *vm);
 void growl_gc_reset(GrowlVM *vm, size_t mark);
+void growl_push(GrowlVM *vm, Growl obj);
+Growl growl_peek(GrowlVM *vm, size_t depth);
+Growl growl_pop(GrowlVM *vm);
+void growl_rpush(GrowlVM *vm, Growl obj);
+Growl growl_rpop(GrowlVM *vm);
+noreturn void growl_vm_error(GrowlVM *vm, const char *fmt, ...);
 int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot);
 
 /** Compiler */
 Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer);
 void growl_disassemble(GrowlVM *vm, GrowlQuotation *quot);
+
+/** Extra libraries */
+void growl_register_file_library(GrowlVM *vm);
 
 #endif // GROWL_H
