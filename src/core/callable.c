@@ -10,6 +10,10 @@ int growl_callable(Growl obj) {
   case GROWL_TYPE_COMPOSE:
   case GROWL_TYPE_CURRY:
     return 1;
+  case GROWL_TYPE_ALIEN: {
+    GrowlAlien *alien = (GrowlAlien *)(hdr + 1);
+    return alien->type && alien->type->call != NULL;
+  }
   default:
     return 0;
   }

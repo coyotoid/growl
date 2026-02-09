@@ -17,6 +17,7 @@ growl_sources = [
     'src/core/compiler.c',
     'src/core/dictionary.c',
     'src/core/disasm.c',
+    'src/core/dynarray.c',
     'src/core/file.c',
     'src/core/gc.c',
     'src/core/hash.c',

@@ -4,9 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "dynarray.h"
 #include "opcodes.h"
 #include "sleb128.h"
-#include "dynarray.h"
+
+#include <libgen.h>
+#include <limits.h>
+#include <unistd.h>
 
 #define COMPILER_DEBUG 0
 
@@ -73,7 +77,7 @@ Primitive primitives[] = {
 // clang-format on
 
 static void emit_byte(GrowlVM *vm, Chunk *chunk, uint8_t byte) {
-  *push(chunk, &vm->scratch) = byte;
+  *growl_dynarray_push(chunk, &vm->scratch) = byte;
 }
 
 static void emit_sleb128(GrowlVM *vm, Chunk *chunk, intptr_t num) {
@@ -95,7 +99,7 @@ static size_t add_constant(GrowlVM *vm, Chunk *chunk, Growl value) {
     if (chunk->constants.data[i] == value)
       return i;
   }
-  *push(&chunk->constants, &vm->scratch) = value;
+  *growl_dynarray_push(&chunk->constants, &vm->scratch) = value;
   return chunk->constants.count - 1;
 }
 
@@ -110,9 +114,9 @@ static int is_integer(const char *str, long *out) {
 }
 
 __attribute__((format(printf, 2, 3))) static void
-compile_error(GrowlLexer *lexer, const char *fmt, ...) {
-  fprintf(stderr, "%d:%d: compile error: ", lexer->start_row + 1,
-          lexer->start_col + 1);
+compile_error(GrowlCompileContext *ctx, const char *fmt, ...) {
+  fprintf(stderr, "%s:%d:%d: compile error: ", ctx->file_path,
+          ctx->lexer->start_row + 1, ctx->lexer->start_col + 1);
   va_list args;
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
@@ -140,85 +144,84 @@ static void optimize_tail_calls(Chunk *chunk) {
   }
 }
 
-static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk);
+static int compile_token(GrowlCompileContext *ctx, Chunk *chunk);
 
-static int compile_quotation(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  growl_lexer_next(lexer); // skip '['
+static int compile_quotation(GrowlCompileContext *ctx, Chunk *chunk) {
+  growl_lexer_next(ctx->lexer); // skip '['
   Chunk quot_chunk = {0};
 
-  while (lexer->kind != ']' && lexer->kind != GTOK_EOF &&
-         lexer->kind != GTOK_INVALID) {
-    if (compile_token(vm, lexer, &quot_chunk)) {
+  while (ctx->lexer->kind != ']' && ctx->lexer->kind != GTOK_EOF &&
+         ctx->lexer->kind != GTOK_INVALID) {
+    if (compile_token(ctx, &quot_chunk)) {
       return 1;
     }
   }
-  if (lexer->kind != ']') {
-    compile_error(lexer, "expected ']' to close quotation");
+  if (ctx->lexer->kind != ']') {
+    compile_error(ctx, "expected ']' to close quotation");
     return 1;
   }
 
-  emit_byte(vm, &quot_chunk, GOP_RETURN);
+  emit_byte(ctx->vm, &quot_chunk, GOP_RETURN);
   optimize_tail_calls(&quot_chunk);
-  Growl quot = growl_make_quotation(vm, quot_chunk.data, quot_chunk.count,
+  Growl quot = growl_make_quotation(ctx->vm, quot_chunk.data, quot_chunk.count,
                                     quot_chunk.constants.data,
                                     quot_chunk.constants.count);
-  size_t idx = add_constant(vm, chunk, quot);
-  emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
-  emit_sleb128(vm, chunk, (intptr_t)idx);
-  growl_lexer_next(lexer);
+  size_t idx = add_constant(ctx->vm, chunk, quot);
+  emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(ctx->vm, chunk, (intptr_t)idx);
+  growl_lexer_next(ctx->lexer);
   return 0;
 }
 
-static int compile_string(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  Growl str = growl_wrap_string_tenured(vm, lexer->buffer);
-  size_t const_idx = add_constant(vm, chunk, str);
-  emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
-  emit_sleb128(vm, chunk, (intptr_t)const_idx);
-  growl_lexer_next(lexer);
+static int compile_string(GrowlCompileContext *ctx, Chunk *chunk) {
+  Growl str = growl_wrap_string_tenured(ctx->vm, ctx->lexer->buffer);
+  size_t const_idx = add_constant(ctx->vm, chunk, str);
+  emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(ctx->vm, chunk, (intptr_t)const_idx);
+  growl_lexer_next(ctx->lexer);
   return 0;
 }
 
-static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
-  growl_lexer_next(lexer);
-  if (lexer->kind != GTOK_WORD) {
-    compile_error(lexer, "expected name after 'def'");
+static int compile_def(GrowlCompileContext *ctx) {
+  growl_lexer_next(ctx->lexer);
+  if (ctx->lexer->kind != GTOK_WORD) {
+    compile_error(ctx, "expected name after 'def'");
     return 1;
   }
 
-  char *name = growl_arena_strdup(&vm->scratch, lexer->buffer);
-  growl_lexer_next(lexer);
-  if (lexer->kind != GTOK_LBRACE) {
-    compile_error(lexer, "expected '{' after def name '%s'", name);
+  char *name = growl_arena_strdup(&ctx->vm->scratch, ctx->lexer->buffer);
+  growl_lexer_next(ctx->lexer);
+  if (ctx->lexer->kind != GTOK_LBRACE) {
+    compile_error(ctx, "expected '{' after def name '%s'", name);
     return 1;
   }
 
-  // Add a forward declaration to the dictionary so the word can reference itself
   GrowlDictionary *entry =
-      growl_dictionary_upsert(&vm->dictionary, name, &vm->arena);
-  GrowlDefinition *def = push(&vm->defs, &vm->arena);
-  def->name = growl_arena_strdup(&vm->arena, name);
-  def->callable = GROWL_NIL; // Placeholder, will be filled in after compilation
+      growl_dictionary_upsert(&ctx->vm->dictionary, name, &ctx->vm->arena);
+  GrowlDefinition *def = growl_dynarray_push(&ctx->vm->defs, &ctx->vm->arena);
+  def->name = growl_arena_strdup(&ctx->vm->arena, name);
+  def->callable = GROWL_NIL;
   entry->callable = GROWL_NIL;
-  entry->index = vm->defs.count - 1;
+  entry->index = ctx->vm->defs.count - 1;
 
-  growl_lexer_next(lexer);
+  growl_lexer_next(ctx->lexer);
   Chunk fn_chunk = {0};
-  while (lexer->kind != GTOK_RBRACE && lexer->kind != GTOK_EOF &&
-         lexer->kind != GTOK_INVALID) {
-    if (compile_token(vm, lexer, &fn_chunk)) {
+  while (ctx->lexer->kind != GTOK_RBRACE && ctx->lexer->kind != GTOK_EOF &&
+         ctx->lexer->kind != GTOK_INVALID) {
+    if (compile_token(ctx, &fn_chunk)) {
       return 1;
     }
   }
 
-  if (lexer->kind != GTOK_RBRACE) {
-    compile_error(lexer, "expected '}' to close def '%s'", name);
+  if (ctx->lexer->kind != GTOK_RBRACE) {
+    compile_error(ctx, "expected '}' to close def '%s'", name);
     return 1;
   }
 
-  emit_byte(vm, &fn_chunk, GOP_RETURN);
+  emit_byte(ctx->vm, &fn_chunk, GOP_RETURN);
   optimize_tail_calls(&fn_chunk);
   Growl fn =
-      growl_make_quotation(vm, fn_chunk.data, fn_chunk.count,
+      growl_make_quotation(ctx->vm, fn_chunk.data, fn_chunk.count,
                            fn_chunk.constants.data, fn_chunk.constants.count);
 
 #if COMPILER_DEBUG
@@ -227,118 +230,206 @@ static int compile_def(GrowlVM *vm, GrowlLexer *lexer) {
   growl_disassemble(vm, quot);
 #endif
 
-  // Now update the definition with the compiled quotation
   def->callable = fn;
   entry->callable = fn;
 
-  growl_lexer_next(lexer);
+  growl_lexer_next(ctx->lexer);
   return 0;
 }
 
-static int compile_call(GrowlVM *vm, GrowlLexer *lexer, const char *name,
-                        Chunk *chunk) {
+static int compile_call(GrowlCompileContext *ctx, Chunk *chunk,
+                        const char *name) {
   for (size_t i = 0; primitives[i].name != NULL; i++) {
     if (strcmp(name, primitives[i].name) == 0) {
       for (size_t j = 0; primitives[i].opcodes[j] != 0; j++)
-        emit_byte(vm, chunk, primitives[i].opcodes[j]);
-      growl_lexer_next(lexer);
+        emit_byte(ctx->vm, chunk, primitives[i].opcodes[j]);
+      growl_lexer_next(ctx->lexer);
       return 0;
     }
   }
 
-  GrowlDictionary *entry = growl_dictionary_upsert(&vm->dictionary, name, NULL);
+  GrowlDictionary *entry =
+      growl_dictionary_upsert(&ctx->vm->dictionary, name, NULL);
   if (entry == NULL) {
-    compile_error(lexer, "undefined word '%s'", name);
+    compile_error(ctx, "undefined word '%s'", name);
     return 1;
   }
-  emit_byte(vm, chunk, GOP_WORD);
-  emit_sleb128(vm, chunk, entry->index);
-  growl_lexer_next(lexer);
+  emit_byte(ctx->vm, chunk, GOP_WORD);
+  emit_sleb128(ctx->vm, chunk, entry->index);
+  growl_lexer_next(ctx->lexer);
   return 0;
 }
 
-static int compile_command(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  char *name = growl_arena_strdup(&vm->scratch, lexer->buffer);
+static char *resolve_module_path(GrowlCompileContext *ctx, const char *path) {
+  char buf[PATH_MAX];
+
+  // relative to current file
+  if (ctx->file_dir && path[0] != '/') {
+    snprintf(buf, sizeof(buf), "%s/%s", ctx->file_dir, path);
+    char *resolved = realpath(buf, NULL);
+    if (resolved && access(resolved, R_OK) == 0)
+      return resolved;
+    free(resolved);
+  }
+
+  // TODO: search paths
+
+  // absolute path
+  if (path[0] == '/') {
+    char *resolved = realpath(path, NULL);
+    if (resolved && access(resolved, R_OK) == 0)
+      return resolved;
+    free(resolved);
+  }
+
+  return NULL;
+}
+
+static int compile_load(GrowlCompileContext *ctx) {
+  growl_lexer_next(ctx->lexer);
+
+  if (ctx->lexer->kind != GTOK_STRING) {
+    compile_error(ctx, "expected string after 'load'");
+    return 1;
+  }
+
+  const char *path = ctx->lexer->buffer;
+  char *resolved = resolve_module_path(ctx, path);
+  if (!resolved) {
+    compile_error(ctx, "cannot find module '%s'", path);
+    return 1;
+  }
+
+  FILE *file = fopen(resolved, "r");
+  if (!file) {
+    compile_error(ctx, "cannot open '%s'", resolved);
+    free(resolved);
+    return 1;
+  }
+
+  GrowlLexer mod_lexer = {0};
+  mod_lexer.file = file;
+
+  char *dir = dirname(strdup(resolved));
+
+  // I'd like to understand why clang-format does 4 spaces for aggregate
+  // initialization.
+  GrowlCompileContext mod_ctx = {
+      .file_path = resolved,
+      .file_dir = dir,
+      .parent = ctx,
+      .lexer = &mod_lexer,
+      .vm = ctx->vm,
+  };
+
+  int result = 0;
+  Growl obj = growl_compile_with_context(&mod_ctx);
+  if (obj == GROWL_NIL) {
+    return 1;
+  }
+
+  GrowlQuotation *q = growl_unwrap_quotation(obj);
+  if (growl_vm_execute(ctx->vm, q) != 0)
+    result = 1;
+
+  fclose(file);
+  free(resolved);
+  free(dir);
+  growl_lexer_next(ctx->lexer);
+
+  return result;
+}
+
+static int compile_command(GrowlCompileContext *ctx, Chunk *chunk) {
+  char *name = growl_arena_strdup(&ctx->vm->scratch, ctx->lexer->buffer);
   name[strlen(name) - 1] = '\0';
-  growl_lexer_next(lexer);
-  while (lexer->kind != GTOK_SEMICOLON && lexer->kind != GTOK_EOF &&
-         lexer->kind != GTOK_INVALID) {
-    if (compile_token(vm, lexer, chunk)) {
+  growl_lexer_next(ctx->lexer);
+  while (ctx->lexer->kind != GTOK_SEMICOLON && ctx->lexer->kind != GTOK_EOF &&
+         ctx->lexer->kind != GTOK_INVALID) {
+    if (compile_token(ctx, chunk)) {
       return 1;
     }
   }
-  if (lexer->kind != GTOK_SEMICOLON) {
-    compile_error(lexer, "expected ';' to close command '%s:'", name);
+  if (ctx->lexer->kind != GTOK_SEMICOLON) {
+    compile_error(ctx, "expected ';' to close command '%s:'", name);
     return 1;
   }
-  return compile_call(vm, lexer, name, chunk);
+  return compile_call(ctx, chunk, name);
 }
 
-static int compile_word(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  char *text = lexer->buffer;
-  size_t len = strlen(text);
+static int compile_word(GrowlCompileContext *ctx, Chunk *chunk) {
+  char *name = ctx->lexer->buffer;
+  size_t len = strlen(name);
 
-  if (strcmp(text, "load") == 0) {
-    // TODO: loading source files
-    compile_error(lexer, "'load' nyi");
-    return 1;
+  if (strcmp(name, "load") == 0) {
+    return compile_load(ctx);
   }
 
   // Compile a definition
-  if (strcmp(text, "def") == 0) {
-    return compile_def(vm, lexer);
+  if (strcmp(name, "def") == 0) {
+    return compile_def(ctx);
   }
 
   // Compile a command: word: args... ;
-  if (len > 1 && text[len - 1] == ':') {
-    return compile_command(vm, lexer, chunk);
+  if (len > 1 && name[len - 1] == ':') {
+    return compile_command(ctx, chunk);
   }
 
   // Compile an integer value
   long value;
-  if (is_integer(text, &value)) {
-    size_t idx = add_constant(vm, chunk, GROWL_NUM(value));
-    emit_byte(vm, chunk, GOP_PUSH_CONSTANT);
-    emit_sleb128(vm, chunk, (intptr_t)idx);
-    growl_lexer_next(lexer);
+  if (is_integer(name, &value)) {
+    size_t idx = add_constant(ctx->vm, chunk, GROWL_NUM(value));
+    emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
+    emit_sleb128(ctx->vm, chunk, (intptr_t)idx);
+    growl_lexer_next(ctx->lexer);
     return 0;
   }
 
-  return compile_call(vm, lexer, text, chunk);
+  return compile_call(ctx, chunk, name);
 }
 
-static int compile_token(GrowlVM *vm, GrowlLexer *lexer, Chunk *chunk) {
-  switch (lexer->kind) {
+static int compile_token(GrowlCompileContext *ctx, Chunk *chunk) {
+  switch (ctx->lexer->kind) {
   case GTOK_WORD:
-    return compile_word(vm, lexer, chunk);
+    return compile_word(ctx, chunk);
   case GTOK_STRING:
-    return compile_string(vm, lexer, chunk);
+    return compile_string(ctx, chunk);
   case GTOK_LBRACKET:
-    return compile_quotation(vm, lexer, chunk);
+    return compile_quotation(ctx, chunk);
   case GTOK_SEMICOLON:
   case GTOK_RPAREN:
   case GTOK_RBRACKET:
   case GTOK_RBRACE:
-    compile_error(lexer, "unexpected token '%c'", lexer->kind);
+    compile_error(ctx, "unexpected token '%c'", ctx->lexer->kind);
     return 1;
   case GTOK_INVALID:
-    compile_error(lexer, "invalid token");
+    compile_error(ctx, "invalid token");
     return 1;
   default:
-    compile_error(lexer, "unhandled token type '%c'", lexer->kind);
+    compile_error(ctx, "unhandled token type '%c'", ctx->lexer->kind);
     return 1;
   }
 }
 
-Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer) {
+Growl growl_compile_with_context(GrowlCompileContext *ctx) {
   Chunk chunk = {0};
-  growl_lexer_next(lexer);
-  while (lexer->kind != GTOK_EOF) {
-    if (compile_token(vm, lexer, &chunk))
+  growl_lexer_next(ctx->lexer);
+  while (ctx->lexer->kind != GTOK_EOF) {
+    if (compile_token(ctx, &chunk))
       return GROWL_NIL;
   }
-  emit_byte(vm, &chunk, GOP_RETURN);
+  emit_byte(ctx->vm, &chunk, GOP_RETURN);
   optimize_tail_calls(&chunk);
-  return growl_make_quotation(vm, chunk.data, chunk.count, chunk.constants.data,
-                              chunk.constants.count);
+  return growl_make_quotation(ctx->vm, chunk.data, chunk.count,
+                              chunk.constants.data, chunk.constants.count);
+}
+
+Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer, const char *path,
+                    const char *dirname) {
+  GrowlCompileContext ctx = {0};
+  ctx.vm = vm;
+  ctx.lexer = lexer;
+  ctx.file_path = path;
+  ctx.file_dir = dirname;
+  return growl_compile_with_context(&ctx);
 }

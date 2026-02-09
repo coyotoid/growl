@@ -1,4 +1,4 @@
-#load("std.grr")
+load "../std.grr"
 
 def fib {
   0 1 dig [dup [+] dip swap] times drop

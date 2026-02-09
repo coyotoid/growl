@@ -117,8 +117,7 @@ static GrowlFrame callstack_pop(GrowlVM *vm) {
   return *--vm->csp;
 }
 
-static inline void dispatch(GrowlVM *vm, Growl obj,
-                            int tail __attribute__((unused))) {
+static inline void dispatch(GrowlVM *vm, Growl obj) {
   for (;;) {
     switch (growl_type(obj)) {
     case GROWL_TYPE_QUOTATION: {
@@ -144,24 +143,21 @@ static inline void dispatch(GrowlVM *vm, Growl obj,
       GrowlAlien *alien = (GrowlAlien *)(GROWL_UNBOX(obj) + 1);
       if (alien->type && alien->type->call) {
         alien->type->call(vm, alien->data);
-        // After calling a native function, we need to return to the caller
         if (vm->csp != vm->cst) {
           GrowlFrame frame = callstack_pop(vm);
           vm->current_quotation = frame.quot;
           vm->ip = frame.ip;
           vm->next = frame.next;
         } else {
-          // No frames on call stack, use return trampoline to exit
           vm->current_quotation = vm->return_trampoline;
           vm->ip = vm->return_trampoline->data;
         }
         return;
       }
-      growl_vm_error(vm, "attempt to call non-callable alien");
+      __attribute__((fallthrough));
     }
     default:
-      growl_vm_error(vm, "attempt to call non-callable (type=%d)",
-                     growl_type(obj));
+      growl_vm_error(vm, "attempt to call non-callable");
     }
   }
 }
@@ -203,7 +199,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
         growl_vm_error(vm, "constant index %" PRIdPTR " out of bounds", idx);
       }
     } else {
-      growl_vm_error(vm, "attempt to index nil constant table");
+      growl_vm_error(vm, "attempt to index invalid constant table");
     }
     VM_NEXT();
   }
@@ -298,18 +294,18 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_OP(CALL) {
     Growl obj = growl_pop(vm);
     callstack_push(vm, vm->current_quotation, vm->ip);
-    dispatch(vm, obj, 0);
+    dispatch(vm, obj);
     VM_NEXT();
   }
   VM_OP(CALL_NEXT) {
     Growl callable = vm->next;
     vm->next = GROWL_NIL;
-    dispatch(vm, callable, 1);
+    dispatch(vm, callable);
     VM_NEXT();
   }
   VM_OP(TAIL_CALL) {
     Growl obj = growl_pop(vm);
-    dispatch(vm, obj, 1);
+    dispatch(vm, obj);
     VM_NEXT();
   }
   VM_OP(WORD) {
@@ -317,14 +313,14 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     GrowlDefinition *def = &vm->defs.data[idx];
     Growl word = def->callable;
     callstack_push(vm, vm->current_quotation, vm->ip);
-    dispatch(vm, word, 0);
+    dispatch(vm, word);
     VM_NEXT();
   }
   VM_OP(TAIL_WORD) {
     intptr_t idx = growl_sleb128_decode(&vm->ip);
     GrowlDefinition *def = &vm->defs.data[idx];
     Growl word = def->callable;
-    dispatch(vm, word, 1);
+    dispatch(vm, word);
     VM_NEXT();
   }
   VM_OP(RETURN) {
@@ -362,7 +358,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     callstack_push(vm, vm->current_quotation, vm->ip);
     callstack_push(vm, vm->dip_trampoline, vm->dip_trampoline->data);
     vm->csp[-1].next = x;
-    dispatch(vm, callable, 0);
+    dispatch(vm, callable);
     VM_NEXT();
   }
   VM_OP(PPRINT) {
@@ -417,7 +413,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     if (GROWL_IMM(a)) {
       growl_push(vm, GROWL_NUM(~GROWL_ORD(a)));
     } else {
-      growl_vm_error(vm, "arithmetic on non-numbers");
+      growl_vm_error(vm, "numeric op on non-numbers");
     }
     VM_NEXT();
   }

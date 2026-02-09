@@ -21,7 +21,7 @@ void growl_register_native(GrowlVM *vm, const char *name,
   Growl alien = growl_make_alien_tenured(vm, &native_type, (void *)fn);
   GrowlDictionary *entry =
       growl_dictionary_upsert(&vm->dictionary, name, &vm->arena);
-  GrowlDefinition *def = push(&vm->defs, &vm->arena);
+  GrowlDefinition *def = growl_dynarray_push(&vm->defs, &vm->arena);
   def->name = growl_arena_strdup(&vm->arena, name);
   def->callable = alien;
   entry->callable = alien;

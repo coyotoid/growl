@@ -1,4 +1,0 @@
-#load("std.grr")
-
-while: [stdin fgetline]
-  [print];

@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GC_DEBUG 0
+#define GC_DEBUG 1
 #define ALIGN(n) (((n) + 7) & ~7)
 
 static int in_from(GrowlVM *vm, void *ptr) {
@@ -139,14 +139,15 @@ void growl_gc_collect(GrowlVM *vm) {
   gc_print_stats(vm, "before GC");
 #endif
 
-  // Forward work stack
-  for (size_t i = 0; i < GROWL_STACK_SIZE; ++i) {
-    vm->wst[i] = forward(vm, vm->wst[i]);
+  // Forward stacks
+  for (Growl *obj = vm->wst; obj < vm->sp; ++obj) {
+    *obj = forward(vm, *obj);
   }
-
-  // Forward retain stack
-  for (size_t i = 0; i < GROWL_STACK_SIZE; ++i) {
-    vm->rst[i] = forward(vm, vm->rst[i]);
+  for (Growl *obj = vm->rst; obj < vm->rsp; ++obj) {
+    *obj = forward(vm, *obj);
+  }
+  for (GrowlFrame *frame = vm->cst; frame < vm->csp; ++frame) {
+    frame->next = forward(vm, frame->next);
   }
 
   // Forward GC roots
@@ -154,10 +155,10 @@ void growl_gc_collect(GrowlVM *vm) {
     *vm->roots[i] = forward(vm, *vm->roots[i]);
   }
 
-  // Forward word definitions
-  for (size_t i = 0; i < vm->defs.count; ++i) {
-    vm->defs.data[i].callable = forward(vm, vm->defs.data[i].callable);
-  }
+  // // Forward word definitions
+  // for (size_t i = 0; i < vm->defs.count; ++i) {
+  //   vm->defs.data[i].callable = forward(vm, vm->defs.data[i].callable);
+  // }
 
   uint8_t *tenured_scan = vm->tenured.start;
   while (tenured_scan < vm->tenured.free) {

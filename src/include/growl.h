@@ -175,7 +175,6 @@ char *growl_arena_strdup(GrowlArena *ar, const char *str);
 #define GROWL_STACK_SIZE 128
 #define GROWL_CALL_STACK_SIZE 64
 #define GROWL_HEAP_SIZE (4 * 1024 * 1024)
-#define GROWL_ARENA_SIZE (2 * 1024 * 1024)
 #define GROWL_SCRATCH_SIZE (1024 * 1024)
 
 struct GrowlFrame {
@@ -208,7 +207,11 @@ struct GrowlModule {
 
 struct GrowlCompileContext {
   GrowlCompileContext *parent;
-  const char *file_path, *file_dir;
+  GrowlVM *vm;
+  GrowlLexer *lexer;
+  const char *name;
+  const char *file_path;
+  const char *file_dir;
 };
 
 GrowlDictionary *growl_dictionary_upsert(GrowlDictionary **dict,
@@ -257,7 +260,9 @@ noreturn void growl_vm_error(GrowlVM *vm, const char *fmt, ...);
 int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot);
 
 /** Compiler */
-Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer);
+Growl growl_compile_with_context(GrowlCompileContext *ctx);
+Growl growl_compile(GrowlVM *vm, GrowlLexer *lexer, const char *path,
+                    const char *dirname);
 void growl_disassemble(GrowlVM *vm, GrowlQuotation *quot);
 
 /** Extra libraries */

@@ -1,19 +1,13 @@
-def print { stdout fprint }
-def println { stdout fprint "\n" stdout fprint }
-def nl { "\n" stdout fprint }
-
-def eprint { stderr fprint }
-def eprintln { stderr fprint "\n" stderr fprint }
+def print { file/stdout file/write }
+def println { print "\n" print }
 
 def when { [] if }
 def unless { swap when }
 
 def 2dip { swap [dip] dip }
-def 3dip { swap [2dip] dip }
 
 def keep { over [call] dip }
 def 2keep { [2dup] dip 2dip }
-def 3keep { [dup 2over dig] dip 3dip }
 
 def bi { [keep] dip call }
 def tri { [[keep] dip keep] dip call }
