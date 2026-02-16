@@ -16,5 +16,6 @@ pkgs.mkShell {
     muon
     samurai
     tokei
+    python3
   ];
 }

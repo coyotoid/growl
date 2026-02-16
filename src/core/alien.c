@@ -7,7 +7,7 @@ Growl growl_make_alien(GrowlVM *vm, GrowlAlienType *type, void *data) {
   GrowlAlien *alien = (GrowlAlien *)(hdr + 1);
   alien->type = type;
   alien->data = data;
-  return GROWL_BOX(hdr);
+  return growl_box_nursery(vm, hdr);
 }
 
 Growl growl_make_alien_tenured(GrowlVM *vm, GrowlAlienType *type, void *data) {
@@ -17,17 +17,17 @@ Growl growl_make_alien_tenured(GrowlVM *vm, GrowlAlienType *type, void *data) {
   GrowlAlien *alien = (GrowlAlien *)(hdr + 1);
   alien->type = type;
   alien->data = data;
-  return GROWL_BOX(hdr);
+  return growl_box_tenured(vm, hdr);
 }
 
-GrowlAlien *growl_unwrap_alien(Growl obj, GrowlAlienType *type) {
-  if (obj == GROWL_NIL || GROWL_IMM(obj))
+GrowlAlien *growl_unwrap_alien(GrowlVM *vm, Growl obj, GrowlAlienType *type) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return NULL;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   if (hdr->type != GROWL_TYPE_ALIEN)
     return NULL;
   GrowlAlien *alien = (GrowlAlien *)(hdr + 1);
-  if (alien->type != type)
+  if (type && alien->type != type)
     return NULL;
   return alien;
 }

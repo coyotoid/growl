@@ -103,9 +103,9 @@ static size_t add_constant(GrowlVM *vm, Chunk *chunk, Growl value) {
   return chunk->constants.count - 1;
 }
 
-static int is_integer(const char *str, long *out) {
+static int is_number(const char *str, double *out) {
   char *end;
-  long val = strtol(str, &end, 0);
+  double val = strtod(str, &end);
   if (*end == '\0' && end != str) {
     *out = val;
     return 1;
@@ -225,9 +225,9 @@ static int compile_def(GrowlCompileContext *ctx) {
                            fn_chunk.constants.data, fn_chunk.constants.count);
 
 #if COMPILER_DEBUG
-  GrowlQuotation *quot = growl_unwrap_quotation(fn);
+  GrowlQuotation *quot = growl_unwrap_quotation(ctx->vm, fn);
   fprintf(stderr, "=== %s ===\n", def->name);
-  growl_disassemble(vm, quot);
+  growl_disassemble(ctx->vm, quot);
 #endif
 
   def->callable = fn;
@@ -328,7 +328,7 @@ static int compile_load(GrowlCompileContext *ctx) {
     return 1;
   }
 
-  GrowlQuotation *q = growl_unwrap_quotation(obj);
+  GrowlQuotation *q = growl_unwrap_quotation(ctx->vm, obj);
   if (growl_vm_execute(ctx->vm, q) != 0)
     result = 1;
 
@@ -375,10 +375,10 @@ static int compile_word(GrowlCompileContext *ctx, Chunk *chunk) {
     return compile_command(ctx, chunk);
   }
 
-  // Compile an integer value
-  long value;
-  if (is_integer(name, &value)) {
-    size_t idx = add_constant(ctx->vm, chunk, GROWL_NUM(value));
+  // Compile a number value
+  double value;
+  if (is_number(name, &value)) {
+    size_t idx = add_constant(ctx->vm, chunk, growl_from_double(value));
     emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
     emit_sleb128(ctx->vm, chunk, (intptr_t)idx);
     growl_lexer_next(ctx->lexer);

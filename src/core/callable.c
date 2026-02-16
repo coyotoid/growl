@@ -1,10 +1,10 @@
 #include <growl.h>
 #include <string.h>
 
-int growl_callable(Growl obj) {
-  if (obj == GROWL_NIL || GROWL_IMM(obj))
+int growl_callable(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return 0;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   switch (hdr->type) {
   case GROWL_TYPE_QUOTATION:
   case GROWL_TYPE_COMPOSE:
@@ -37,7 +37,7 @@ Growl growl_make_quotation(GrowlVM *vm, const uint8_t *code, size_t code_size,
     for (size_t i = 0; i < constants_size; ++i) {
       constants_tuple->data[i] = constants[i];
     }
-    constants_obj = GROWL_BOX(constants_hdr);
+    constants_obj = growl_box_tenured(vm, constants_hdr);
   }
 
   size_t quotation_obj_size =
@@ -51,22 +51,22 @@ Growl growl_make_quotation(GrowlVM *vm, const uint8_t *code, size_t code_size,
   quotation->count = code_size;
   memcpy(quotation->data, code, code_size);
 
-  return GROWL_BOX(quotation_hdr);
+  return growl_box_tenured(vm, quotation_hdr);
 }
 
-GrowlQuotation *growl_unwrap_quotation(Growl obj) {
-  if (obj == GROWL_NIL || GROWL_IMM(obj))
+GrowlQuotation *growl_unwrap_quotation(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return NULL;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   if (hdr->type != GROWL_TYPE_QUOTATION)
     return NULL;
   return (GrowlQuotation *)(hdr + 1);
 }
 
 Growl growl_compose(GrowlVM *vm, Growl first, Growl second) {
-  if (!growl_callable(first))
+  if (!growl_callable(vm, first))
     return GROWL_NIL;
-  if (!growl_callable(second))
+  if (!growl_callable(vm, second))
     return GROWL_NIL;
   size_t mark = growl_gc_mark(vm);
   growl_gc_root(vm, &first);
@@ -78,20 +78,20 @@ Growl growl_compose(GrowlVM *vm, Growl first, Growl second) {
   comp->first = first;
   comp->second = second;
   growl_gc_reset(vm, mark);
-  return GROWL_BOX(hdr);
+  return growl_box_nursery(vm, hdr);
 }
 
-GrowlCompose *growl_unwrap_compose(Growl obj) {
-  if (obj == GROWL_NIL || GROWL_IMM(obj))
+GrowlCompose *growl_unwrap_compose(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return NULL;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   if (hdr->type != GROWL_TYPE_COMPOSE)
     return NULL;
   return (GrowlCompose *)(hdr + 1);
 }
 
 Growl growl_curry(GrowlVM *vm, Growl value, Growl callable) {
-  if (!growl_callable(callable))
+  if (!growl_callable(vm, callable))
     return GROWL_NIL;
   size_t mark = growl_gc_mark(vm);
   growl_gc_root(vm, &value);
@@ -103,13 +103,13 @@ Growl growl_curry(GrowlVM *vm, Growl value, Growl callable) {
   comp->value = value;
   comp->callable = callable;
   growl_gc_reset(vm, mark);
-  return GROWL_BOX(hdr);
+  return growl_box_nursery(vm, hdr);
 }
 
-GrowlCurry *growl_unwrap_curry(Growl obj) {
-  if (obj == GROWL_NIL || GROWL_IMM(obj))
+GrowlCurry *growl_unwrap_curry(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return NULL;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   if (hdr->type != GROWL_TYPE_CURRY)
     return NULL;
   return (GrowlCurry *)(hdr + 1);

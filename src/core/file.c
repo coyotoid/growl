@@ -23,7 +23,7 @@ static void native_file_stdout(GrowlVM *vm) {
     GrowlAlien *stdout_alien = (GrowlAlien *)(hdr + 1);
     stdout_alien->data = stdout;
     stdout_alien->type = &alien_file_type;
-    stdout_obj = GROWL_BOX(hdr);
+    stdout_obj = growl_box_tenured(vm, hdr);
   }
   growl_push(vm, stdout_obj);
 }
@@ -32,11 +32,11 @@ static void native_file_write(GrowlVM *vm) {
   Growl file_obj = growl_pop(vm);
   Growl string_obj = growl_pop(vm);
 
-  GrowlAlien *file_alien = growl_unwrap_alien(file_obj, &alien_file_type);
+  GrowlAlien *file_alien = growl_unwrap_alien(vm, file_obj, &alien_file_type);
   if (file_alien == NULL)
     growl_vm_error(vm, "expected file object");
 
-  GrowlString *str = growl_unwrap_string(string_obj);
+  GrowlString *str = growl_unwrap_string(vm, string_obj);
   if (str == NULL)
     growl_vm_error(vm, "expected string");
 

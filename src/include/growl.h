@@ -6,15 +6,52 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdnoreturn.h>
+#include <string.h>
 
-typedef uintptr_t Growl;
+typedef uint64_t Growl;
 
-#define GROWL_NIL ((Growl)(0))
-#define GROWL_BOX(x) ((Growl)(x))
-#define GROWL_UNBOX(x) ((GrowlObjectHeader *)(x))
-#define GROWL_IMM(x) ((Growl)(x) & (Growl)1)
-#define GROWL_NUM(x) (((Growl)((intptr_t)(x) << 1)) | (Growl)1)
-#define GROWL_ORD(x) ((intptr_t)(x) >> 1)
+/* NaN-boxing: all tagged values have bits 62:50 set (quiet NaN + marker) */
+#define GROWL_QNAN UINT64_C(0x7FFC000000000000)
+#define GROWL_NIL (GROWL_QNAN)
+
+/* Type tags (bits 49:48) */
+#define GROWL_TAG_PTR 2
+
+/* Canonical NaN for IEEE 754 doubles */
+#define GROWL_CANON_NAN UINT64_C(0x7FF8000000000000)
+
+/* Arena tags (bits 47:46) */
+#define GROWL_ARENA_NURSERY 0
+#define GROWL_ARENA_TENURED 1
+
+/* Type checks */
+#define GROWL_IS_NIL(x) ((x) == GROWL_NIL)
+#define GROWL_IS_NUM(x) (((x) & GROWL_QNAN) != GROWL_QNAN)
+#define GROWL_IS_PTR(x)                                                        \
+  (((x) & UINT64_C(0xFFFF000000000000)) ==                                    \
+   (GROWL_QNAN | (UINT64_C(2) << 48)))
+
+/* Double encoding via memcpy (type-punning safe) */
+static inline Growl growl_from_double(double d) {
+  uint64_t bits;
+  memcpy(&bits, &d, sizeof(bits));
+  if ((bits & GROWL_QNAN) == GROWL_QNAN)
+    bits = GROWL_CANON_NAN;
+  return bits;
+}
+
+static inline double growl_to_double(Growl v) {
+  double d;
+  memcpy(&d, &v, sizeof(d));
+  return d;
+}
+
+/* Pointer construction/extraction */
+#define GROWL_MKPTR(arena, offset)                                             \
+  (GROWL_QNAN | (UINT64_C(2) << 48) | ((uint64_t)(arena) << 46) |            \
+   ((uint64_t)(offset) & UINT64_C(0x3FFFFFFFFFFF)))
+#define GROWL_PTR_ARENA(x) (((x) >> 46) & UINT64_C(3))
+#define GROWL_PTR_OFFSET(x) ((x) & UINT64_C(0x3FFFFFFFFFFF))
 
 typedef struct GrowlObjectHeader GrowlObjectHeader;
 typedef struct GrowlString GrowlString;
@@ -54,16 +91,16 @@ struct GrowlObjectHeader {
   uint32_t type;
 };
 
-uint32_t growl_type(Growl obj);
-int growl_equals(Growl a, Growl b);
+uint32_t growl_type(GrowlVM *vm, Growl obj);
+int growl_equals(GrowlVM *vm, Growl a, Growl b);
 
 uint64_t growl_hash_combine(uint64_t a, uint64_t b);
 uint64_t growl_hash_bytes(const uint8_t *data, size_t len);
-uint64_t growl_hash(Growl obj);
+uint64_t growl_hash(GrowlVM *vm, Growl obj);
 
-void growl_print_to(FILE *file, Growl value);
-void growl_print(Growl value);
-void growl_println(Growl value);
+void growl_print_to(GrowlVM *vm, FILE *file, Growl value);
+void growl_print(GrowlVM *vm, Growl value);
+void growl_println(GrowlVM *vm, Growl value);
 
 struct GrowlString {
   size_t len;
@@ -73,7 +110,7 @@ struct GrowlString {
 Growl growl_make_string(GrowlVM *vm, size_t len);
 Growl growl_wrap_string(GrowlVM *vm, const char *cstr);
 Growl growl_wrap_string_tenured(GrowlVM *vm, const char *cstr);
-GrowlString *growl_unwrap_string(Growl obj);
+GrowlString *growl_unwrap_string(GrowlVM *vm, Growl obj);
 
 struct GrowlList {
   Growl head, tail;
@@ -84,11 +121,11 @@ struct GrowlTuple {
   Growl data[];
 };
 
-GrowlTuple *growl_unwrap_tuple(Growl obj);
+GrowlTuple *growl_unwrap_tuple(GrowlVM *vm, Growl obj);
 
 struct GrowlTable {};
 
-GrowlTable *growl_unwrap_table(Growl obj);
+GrowlTable *growl_unwrap_table(GrowlVM *vm, Growl obj);
 
 struct GrowlQuotation {
   size_t count;
@@ -104,14 +141,14 @@ struct GrowlCurry {
   Growl value, callable;
 };
 
-int growl_callable(Growl obj);
+int growl_callable(GrowlVM *vm, Growl obj);
 Growl growl_make_quotation(GrowlVM *vm, const uint8_t *code, size_t code_size,
                            const Growl *constants, size_t constants_size);
-GrowlQuotation *growl_unwrap_quotation(Growl obj);
+GrowlQuotation *growl_unwrap_quotation(GrowlVM *vm, Growl obj);
 Growl growl_compose(GrowlVM *vm, Growl first, Growl second);
-GrowlCompose *growl_unwrap_compose(Growl obj);
+GrowlCompose *growl_unwrap_compose(GrowlVM *vm, Growl obj);
 Growl growl_curry(GrowlVM *vm, Growl value, Growl callable);
-GrowlCurry *growl_unwrap_curry(Growl obj);
+GrowlCurry *growl_unwrap_curry(GrowlVM *vm, Growl obj);
 
 struct GrowlAlienType {
   const char *name;
@@ -126,7 +163,7 @@ struct GrowlAlien {
 
 Growl growl_make_alien(GrowlVM *vm, GrowlAlienType *type, void *data);
 Growl growl_make_alien_tenured(GrowlVM *vm, GrowlAlienType *type, void *data);
-GrowlAlien *growl_unwrap_alien(Growl obj, GrowlAlienType *type);
+GrowlAlien *growl_unwrap_alien(GrowlVM *vm, Growl obj, GrowlAlienType *type);
 void growl_register_native(GrowlVM *vm, const char *name,
                            void (*fn)(GrowlVM *));
 
@@ -242,6 +279,28 @@ struct GrowlVM {
 
   jmp_buf error;
 };
+
+static inline GrowlObjectHeader *growl_unbox(GrowlVM *vm, Growl val) {
+  uint64_t offset = GROWL_PTR_OFFSET(val);
+  switch (GROWL_PTR_ARENA(val)) {
+  case GROWL_ARENA_NURSERY:
+    return (GrowlObjectHeader *)(vm->from.start + offset);
+  case GROWL_ARENA_TENURED:
+    return (GrowlObjectHeader *)(vm->tenured.start + offset);
+  default:
+    return NULL;
+  }
+}
+
+static inline Growl growl_box_nursery(GrowlVM *vm, GrowlObjectHeader *hdr) {
+  uint64_t offset = (uint64_t)((uint8_t *)hdr - vm->from.start);
+  return GROWL_MKPTR(GROWL_ARENA_NURSERY, offset);
+}
+
+static inline Growl growl_box_tenured(GrowlVM *vm, GrowlObjectHeader *hdr) {
+  uint64_t offset = (uint64_t)((uint8_t *)hdr - vm->tenured.start);
+  return GROWL_MKPTR(GROWL_ARENA_TENURED, offset);
+}
 
 GrowlVM *growl_vm_init(void);
 void growl_vm_free(GrowlVM *vm);

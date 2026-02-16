@@ -8,7 +8,7 @@ Growl growl_make_string(GrowlVM *vm, size_t len) {
   GrowlString *str = (GrowlString *)(hdr + 1);
   str->len = len;
   memset(str->data, 0, len);
-  return GROWL_BOX(hdr);
+  return growl_box_nursery(vm, hdr);
 }
 
 Growl growl_wrap_string(GrowlVM *vm, const char *cstr) {
@@ -20,7 +20,7 @@ Growl growl_wrap_string(GrowlVM *vm, const char *cstr) {
   str->len = len;
   memcpy(str->data, cstr, len);
   str->data[len] = 0;
-  return GROWL_BOX(hdr);
+  return growl_box_nursery(vm, hdr);
 }
 
 Growl growl_wrap_string_tenured(GrowlVM *vm, const char *cstr) {
@@ -32,13 +32,13 @@ Growl growl_wrap_string_tenured(GrowlVM *vm, const char *cstr) {
   str->len = len;
   memcpy(str->data, cstr, len);
   str->data[len] = 0;
-  return GROWL_BOX(hdr);
+  return growl_box_tenured(vm, hdr);
 }
 
-GrowlString *growl_unwrap_string(Growl obj) {
-  if (obj == 0 || GROWL_IMM(obj))
+GrowlString *growl_unwrap_string(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
     return NULL;
-  GrowlObjectHeader *hdr = GROWL_UNBOX(obj);
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
   if (hdr->type != GROWL_TYPE_STRING)
     return NULL;
   return (GrowlString *)(hdr + 1);

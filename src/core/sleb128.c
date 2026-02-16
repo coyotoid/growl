@@ -1,7 +1,3 @@
-//
-// Created by lobo on 2/5/26.
-//
-
 #include "sleb128.h"
 
 intptr_t growl_sleb128_decode(uint8_t **ptr) {

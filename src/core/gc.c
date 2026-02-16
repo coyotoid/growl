@@ -1,7 +1,3 @@
-//
-// Created by lobo on 2/5/26.
-//
-
 #include <assert.h>
 #include <growl.h>
 #include <inttypes.h>
@@ -12,31 +8,28 @@
 #define GC_DEBUG 1
 #define ALIGN(n) (((n) + 7) & ~7)
 
-static int in_from(GrowlVM *vm, void *ptr) {
-  const uint8_t *x = ptr;
-  return (x >= vm->from.start && x < vm->from.end);
-}
-
 static Growl copy(GrowlVM *vm, GrowlObjectHeader *hdr) {
-  assert(in_from(vm, hdr));
   assert(hdr->type != UINT32_MAX);
   size_t size = ALIGN(hdr->size);
   GrowlObjectHeader *new = (GrowlObjectHeader *)vm->to.free;
   vm->to.free += size;
   memcpy(new, hdr, size);
+  uint64_t new_offset = (uint64_t)((uint8_t *)new - vm->to.start);
+  Growl fwd_val = GROWL_MKPTR(GROWL_ARENA_NURSERY, new_offset);
   hdr->type = UINT32_MAX;
-  Growl *obj = (Growl *)(hdr + 1);
-  *obj = (Growl)(new);
-  return *obj;
+  Growl *fwd = (Growl *)(hdr + 1);
+  *fwd = fwd_val;
+  return fwd_val;
 }
 
 static Growl forward(GrowlVM *vm, Growl obj) {
-  if (obj == 0)
-    return 0;
-  if (!in_from(vm, (void *)obj))
+  if (!GROWL_IS_PTR(obj))
+    return obj;
+  if (GROWL_PTR_ARENA(obj) != GROWL_ARENA_NURSERY)
     return obj;
 
-  GrowlObjectHeader *hdr = (GrowlObjectHeader *)obj;
+  uint64_t offset = GROWL_PTR_OFFSET(obj);
+  GrowlObjectHeader *hdr = (GrowlObjectHeader *)(vm->from.start + offset);
   if (hdr->type == UINT32_MAX) {
     Growl *fwd = (Growl *)(hdr + 1);
     return *fwd;

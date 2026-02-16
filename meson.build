@@ -31,7 +31,6 @@ growl_sources = [
     'src/core/tuple.c',
     'src/core/value.c',
     'src/core/vm.c',
-    'src/main.c',
 ]
 
 cc = meson.get_compiler('c')
@@ -39,6 +38,7 @@ m_dep = cc.find_library('m', required: false)
 
 growl = executable(
     'growl',
+    'src/main.c',
     growl_sources,
     dependencies: [m_dep],
     include_directories: ['src/include'],

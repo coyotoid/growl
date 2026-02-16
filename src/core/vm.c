@@ -1,4 +1,5 @@
 #include <growl.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
@@ -33,15 +34,15 @@ GrowlVM *growl_vm_init(void) {
 
   static uint8_t compose_code[] = {GOP_CALL_NEXT};
   Growl compose_tramp = growl_make_quotation(vm, compose_code, 1, NULL, 0);
-  vm->compose_trampoline = (GrowlQuotation *)(GROWL_UNBOX(compose_tramp) + 1);
+  vm->compose_trampoline = (GrowlQuotation *)(growl_unbox(vm, compose_tramp) + 1);
 
   static uint8_t return_code[] = {GOP_RETURN};
   Growl return_tramp = growl_make_quotation(vm, return_code, 1, NULL, 0);
-  vm->return_trampoline = (GrowlQuotation *)(GROWL_UNBOX(return_tramp) + 1);
+  vm->return_trampoline = (GrowlQuotation *)(growl_unbox(vm, return_tramp) + 1);
 
   static uint8_t dip_code[] = {GOP_PUSH_NEXT, GOP_RETURN};
   Growl dip_tramp = growl_make_quotation(vm, dip_code, 2, NULL, 0);
-  vm->dip_trampoline = (GrowlQuotation *)(GROWL_UNBOX(dip_tramp) + 1);
+  vm->dip_trampoline = (GrowlQuotation *)(growl_unbox(vm, dip_tramp) + 1);
 
   return vm;
 }
@@ -119,28 +120,28 @@ static GrowlFrame callstack_pop(GrowlVM *vm) {
 
 static inline void dispatch(GrowlVM *vm, Growl obj) {
   for (;;) {
-    switch (growl_type(obj)) {
+    switch (growl_type(vm, obj)) {
     case GROWL_TYPE_QUOTATION: {
-      GrowlQuotation *q = (GrowlQuotation *)(GROWL_UNBOX(obj) + 1);
+      GrowlQuotation *q = (GrowlQuotation *)(growl_unbox(vm, obj) + 1);
       vm->current_quotation = q;
       vm->ip = q->data;
       return;
     }
     case GROWL_TYPE_COMPOSE: {
-      GrowlCompose *c = (GrowlCompose *)(GROWL_UNBOX(obj) + 1);
+      GrowlCompose *c = (GrowlCompose *)(growl_unbox(vm, obj) + 1);
       callstack_push(vm, vm->compose_trampoline, vm->compose_trampoline->data);
       vm->csp[-1].next = c->second;
       obj = c->first;
       continue;
     }
     case GROWL_TYPE_CURRY: {
-      GrowlCurry *c = (GrowlCurry *)(GROWL_UNBOX(obj) + 1);
+      GrowlCurry *c = (GrowlCurry *)(growl_unbox(vm, obj) + 1);
       growl_push(vm, c->value);
       obj = c->callable;
       continue;
     }
     case GROWL_TYPE_ALIEN: {
-      GrowlAlien *alien = (GrowlAlien *)(GROWL_UNBOX(obj) + 1);
+      GrowlAlien *alien = (GrowlAlien *)(growl_unbox(vm, obj) + 1);
       if (alien->type && alien->type->call) {
         alien->type->call(vm, alien->data);
         if (vm->csp != vm->cst) {
@@ -191,7 +192,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_OP(PUSH_CONSTANT) {
     intptr_t idx = growl_sleb128_decode(&vm->ip);
     GrowlTuple *constants =
-        growl_unwrap_tuple(vm->current_quotation->constants);
+        growl_unwrap_tuple(vm, vm->current_quotation->constants);
     if (constants != NULL) {
       if (idx >= 0 && (size_t)idx < constants->count) {
         growl_push(vm, constants->data[idx]);
@@ -362,7 +363,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     VM_NEXT();
   }
   VM_OP(PPRINT) {
-    growl_println(growl_pop(vm));
+    growl_println(vm, growl_pop(vm));
     VM_NEXT();
   }
 
@@ -370,8 +371,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   case GOP_##name: {                                                           \
     Growl b = growl_pop(vm);                                                   \
     Growl a = growl_pop(vm);                                                   \
-    if (GROWL_IMM(b) && GROWL_IMM(a)) {                                        \
-      growl_push(vm, GROWL_NUM(GROWL_ORD(a) op GROWL_ORD(b)));                 \
+    if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {                                  \
+      growl_push(vm,                                                           \
+                 growl_from_double(growl_to_double(a) op growl_to_double(b)));  \
     } else {                                                                   \
       growl_vm_error(vm, "numeric op on non-numbers");                         \
     }                                                                          \
@@ -381,37 +383,40 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_BINOP(ADD, +);
   VM_BINOP(MUL, *);
   VM_BINOP(SUB, -);
-  VM_OP(DIV) {
-    Growl b = growl_pop(vm);
-    Growl a = growl_pop(vm);
-    if (GROWL_IMM(b) && GROWL_IMM(a)) {
-      if (GROWL_ORD(b) == 0)
-        growl_vm_error(vm, "division by zero");
-      growl_push(vm, GROWL_NUM(GROWL_ORD(a) / GROWL_ORD(b)));
-    } else {
-      growl_vm_error(vm, "numeric op on non-numbers");
-    };
-    VM_NEXT();
-  }
+  VM_BINOP(DIV, /);
   VM_OP(MOD) {
     Growl b = growl_pop(vm);
     Growl a = growl_pop(vm);
-    if (GROWL_IMM(b) && GROWL_IMM(a)) {
-      if (GROWL_ORD(b) == 0)
-        growl_vm_error(vm, "division by zero");
-      growl_push(vm, GROWL_NUM(GROWL_ORD(a) % GROWL_ORD(b)));
+    if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {
+      growl_push(vm, growl_from_double(fmod(growl_to_double(a),
+                                            growl_to_double(b))));
     } else {
       growl_vm_error(vm, "numeric op on non-numbers");
-    };
+    }
     VM_NEXT();
   }
-  VM_BINOP(BAND, &);
-  VM_BINOP(BOR, |);
-  VM_BINOP(BXOR, ^);
+#define VM_BITOP(name, op)                                                     \
+  case GOP_##name: {                                                           \
+    Growl b = growl_pop(vm);                                                   \
+    Growl a = growl_pop(vm);                                                   \
+    if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {                                  \
+      int32_t ia = (int32_t)growl_to_double(a);                                \
+      int32_t ib = (int32_t)growl_to_double(b);                                \
+      growl_push(vm, growl_from_double((double)(ia op ib)));                    \
+    } else {                                                                   \
+      growl_vm_error(vm, "numeric op on non-numbers");                         \
+    }                                                                          \
+    VM_NEXT();                                                                 \
+  }
+
+  VM_BITOP(BAND, &);
+  VM_BITOP(BOR, |);
+  VM_BITOP(BXOR, ^);
   VM_OP(BNOT) {
     Growl a = growl_pop(vm);
-    if (GROWL_IMM(a)) {
-      growl_push(vm, GROWL_NUM(~GROWL_ORD(a)));
+    if (GROWL_IS_NUM(a)) {
+      int32_t ia = (int32_t)growl_to_double(a);
+      growl_push(vm, growl_from_double((double)(~ia)));
     } else {
       growl_vm_error(vm, "numeric op on non-numbers");
     }
@@ -440,9 +445,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_OP(EQ) {
     Growl b = growl_pop(vm);
     Growl a = growl_pop(vm);
-    int equals = growl_equals(a, b);
+    int equals = growl_equals(vm, a, b);
     if (equals) {
-      growl_push(vm, GROWL_NUM(1));
+      growl_push(vm, growl_from_double(1.0));
     } else {
       growl_push(vm, GROWL_NIL);
     }
@@ -451,9 +456,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_OP(NEQ) {
     Growl b = growl_pop(vm);
     Growl a = growl_pop(vm);
-    int equals = growl_equals(a, b);
+    int equals = growl_equals(vm, a, b);
     if (!equals) {
-      growl_push(vm, GROWL_NUM(1));
+      growl_push(vm, growl_from_double(1.0));
     } else {
       growl_push(vm, GROWL_NIL);
     }
@@ -464,9 +469,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   case GOP_##name: {                                                           \
     Growl b = growl_pop(vm);                                                   \
     Growl a = growl_pop(vm);                                                   \
-    if (GROWL_IMM(b) && GROWL_IMM(a)) {                                        \
-      if (GROWL_ORD(a) op GROWL_ORD(b)) {                                      \
-        growl_push(vm, GROWL_NUM(1));                                          \
+    if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {                                  \
+      if (growl_to_double(a) op growl_to_double(b)) {                          \
+        growl_push(vm, growl_from_double(1.0));                                \
       } else {                                                                 \
         growl_push(vm, GROWL_NIL);                                             \
       }                                                                        \

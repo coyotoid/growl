@@ -21,13 +21,13 @@ int main(int argc, const char *argv[]) {
 
   Growl obj = growl_compile(vm, &lexer, filename, dirname_);
   if (obj != GROWL_NIL) {
-    GrowlQuotation *quot = growl_unwrap_quotation(obj);
+    GrowlQuotation *quot = growl_unwrap_quotation(vm, obj);
     if (!growl_vm_execute(vm, quot)) {
       if (vm->sp != vm->wst) {
         fprintf(stderr, "Stack:");
         for (Growl *p = vm->wst; p < vm->sp; p++) {
           putc(' ', stderr);
-          growl_print_to(stderr, *p);
+          growl_print_to(vm, stderr, *p);
         }
         putchar('\n');
       }

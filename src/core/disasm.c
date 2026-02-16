@@ -1,6 +1,7 @@
-#include "opcodes.h"
-#include "sleb128.h"
 #include <growl.h>
+
+#include "sleb128.h"
+#include "opcodes.h"
 
 static void disassemble(GrowlVM *vm, GrowlQuotation *quot, int indent);
 
@@ -26,18 +27,18 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
       size_t bytes_read = growl_sleb128_peek(&quot->data[offset], &idx);
       fprintf(stderr, "PUSH_CONSTANT %ld", idx);
       if (quot->constants != GROWL_NIL &&
-          growl_type(quot->constants) == GROWL_TYPE_TUPLE) {
-        GrowlTuple *constants = growl_unwrap_tuple(quot->constants);
+          growl_type(vm, quot->constants) == GROWL_TYPE_TUPLE) {
+        GrowlTuple *constants = growl_unwrap_tuple(vm, quot->constants);
         if (idx >= 0 && (size_t)idx < constants->count) {
           Growl constant = constants->data[idx];
           fprintf(stderr, " (");
-          growl_print_to(stderr, constant);
+          growl_print_to(vm, stderr, constant);
           fprintf(stderr, ")");
 
-          if (!GROWL_IMM(constant) && constant != GROWL_NIL &&
-              growl_type(constant) == GROWL_TYPE_QUOTATION) {
+          if (GROWL_IS_PTR(constant) &&
+              growl_type(vm, constant) == GROWL_TYPE_QUOTATION) {
             putc('\n', stderr);
-            GrowlQuotation *inner = growl_unwrap_quotation(constant);
+            GrowlQuotation *inner = growl_unwrap_quotation(vm, constant);
             disassemble(vm, inner, indent + 1);
             return offset + bytes_read;
           }
