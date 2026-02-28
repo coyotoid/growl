@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <growl.h>
 #include <math.h>
 #include <stdarg.h>
@@ -34,7 +35,8 @@ GrowlVM *growl_vm_init(void) {
 
   static uint8_t compose_code[] = {GOP_CALL_NEXT};
   Growl compose_tramp = growl_make_quotation(vm, compose_code, 1, NULL, 0);
-  vm->compose_trampoline = (GrowlQuotation *)(growl_unbox(vm, compose_tramp) + 1);
+  vm->compose_trampoline =
+      (GrowlQuotation *)(growl_unbox(vm, compose_tramp) + 1);
 
   static uint8_t return_code[] = {GOP_RETURN};
   Growl return_tramp = growl_make_quotation(vm, return_code, 1, NULL, 0);
@@ -373,9 +375,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     Growl a = growl_pop(vm);                                                   \
     if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {                                  \
       growl_push(vm,                                                           \
-                 growl_from_double(growl_to_double(a) op growl_to_double(b)));  \
+                 growl_from_double(growl_to_double(a) op growl_to_double(b))); \
     } else {                                                                   \
-      growl_vm_error(vm, "numeric op on non-numbers");                         \
+      growl_vm_error(vm, #op ": numeric op on non-numbers");                         \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -388,10 +390,10 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     Growl b = growl_pop(vm);
     Growl a = growl_pop(vm);
     if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {
-      growl_push(vm, growl_from_double(fmod(growl_to_double(a),
-                                            growl_to_double(b))));
+      growl_push(
+          vm, growl_from_double(fmod(growl_to_double(a), growl_to_double(b))));
     } else {
-      growl_vm_error(vm, "numeric op on non-numbers");
+      growl_vm_error(vm, "%%: numeric op on non-numbers");
     }
     VM_NEXT();
   }
@@ -402,9 +404,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     if (GROWL_IS_NUM(b) && GROWL_IS_NUM(a)) {                                  \
       int32_t ia = (int32_t)growl_to_double(a);                                \
       int32_t ib = (int32_t)growl_to_double(b);                                \
-      growl_push(vm, growl_from_double((double)(ia op ib)));                    \
+      growl_push(vm, growl_from_double((double)(ia op ib)));                   \
     } else {                                                                   \
-      growl_vm_error(vm, "numeric op on non-numbers");                         \
+      growl_vm_error(vm, #op ": numeric op on non-numbers");                         \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -418,7 +420,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
       int32_t ia = (int32_t)growl_to_double(a);
       growl_push(vm, growl_from_double((double)(~ia)));
     } else {
-      growl_vm_error(vm, "numeric op on non-numbers");
+      growl_vm_error(vm, "~: numeric op on non-numbers");
     }
     VM_NEXT();
   }
@@ -476,7 +478,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
         growl_push(vm, GROWL_NIL);                                             \
       }                                                                        \
     } else {                                                                   \
-      growl_vm_error(vm, "comparison on non-numbers");                         \
+      growl_vm_error(vm, #op ": comparison on non-numbers");                         \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -485,6 +487,123 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
   VM_CMPOP(LTE, <=);
   VM_CMPOP(GT, >);
   VM_CMPOP(GTE, >=);
+
+  VM_OP(LIST_CONS) {
+    Growl tail = growl_pop(vm);
+    Growl head = growl_pop(vm);
+    growl_push(vm, growl_cons(vm, head, tail));
+    VM_NEXT();
+  }
+
+  VM_OP(LIST_HEAD) {
+    Growl value = growl_pop(vm);
+    if (GROWL_IS_NIL(value))
+      growl_vm_error(vm, "head: attempt to get head of nil");
+    if (GROWL_IS_NUM(value))
+      growl_vm_error(vm, "head: attempt to get head of number");
+    GrowlObjectHeader *hdr = growl_unbox(vm, value);
+    if (hdr->type == GROWL_TYPE_LIST) {
+      GrowlList *lst = (GrowlList *)(hdr + 1);
+      growl_push(vm, lst->head);
+    } else {
+      growl_vm_error(vm, "head: attempt to get head of non-list");
+    }
+    VM_NEXT();
+  }
+
+  VM_OP(LIST_TAIL) {
+    Growl value = growl_pop(vm);
+    if (GROWL_IS_NIL(value))
+      growl_vm_error(vm, "tail: attempt to get tail of nil");
+    if (GROWL_IS_NUM(value))
+      growl_vm_error(vm, "tail: attempt to get tail of number");
+    GrowlObjectHeader *hdr = growl_unbox(vm, value);
+    if (hdr->type == GROWL_TYPE_LIST) {
+      GrowlList *lst = (GrowlList *)(hdr + 1);
+      growl_push(vm, lst->tail);
+    } else {
+      growl_vm_error(vm, "tail: attempt to get tail of non-list");
+    }
+    VM_NEXT();
+  }
+
+  VM_OP(LIST_LENGTH) {
+    Growl value = growl_pop(vm);
+    if (growl_type(vm, value) != GROWL_TYPE_LIST)
+      growl_vm_error(vm, "list/length: can't get length of non-list");
+    size_t len = growl_list_length(vm, value);
+    growl_push(vm, growl_from_double(len));
+    VM_NEXT();
+  }
+
+  VM_OP(LIST_TO_TUPLE) {
+    Growl list = growl_pop(vm);
+    if (growl_type(vm, list) != GROWL_TYPE_LIST)
+      growl_vm_error(vm, "list->tuple: can't convert non-list to tuple");
+    growl_push(vm, growl_list_to_tuple(vm, list));
+    VM_NEXT();
+  }
+
+  VM_OP(TUPLE_GET) {
+    Growl obj = growl_pop(vm);
+    Growl n = growl_pop(vm);
+    if (growl_type(vm, n) != GROWL_TYPE_NUMBER)
+      growl_vm_error(vm, "tuple/get: expected a number for index");
+    if (growl_type(vm, obj) != GROWL_TYPE_TUPLE)
+      growl_vm_error(vm, "tuple/get: can't index a non-tuple");
+    GrowlTuple *tup = growl_unwrap_tuple(vm, obj);
+    assert(tup != NULL);
+    intptr_t index = (intptr_t)(growl_to_double(n));
+    if (index < 0 || index >= (intptr_t)tup->count)
+      growl_vm_error(vm, "tuple/get: index out of range");
+    growl_push(vm, tup->data[index]);
+    VM_NEXT();
+  }
+
+  VM_OP(TUPLE_SET) {
+    Growl obj = growl_pop(vm);
+    Growl n = growl_pop(vm);
+    Growl elt = growl_pop(vm);
+    if (growl_type(vm, n) != GROWL_TYPE_NUMBER)
+      growl_vm_error(vm, "tuple/set: expected a number for index");
+    if (growl_type(vm, obj) != GROWL_TYPE_TUPLE)
+      growl_vm_error(vm, "tuple/set: attempt to index a non-tuple");
+    GrowlTuple *tup = growl_unwrap_tuple(vm, obj);
+    assert(tup != NULL);
+    intptr_t index = (intptr_t)(growl_to_double(n));
+    if (index < 0 || index >= (intptr_t)tup->count)
+      growl_vm_error(vm, "tuple/set: index out of range");
+    tup->data[index] = elt;
+    VM_NEXT();
+  }
+
+  VM_OP(TUPLE_CLONE) {
+    Growl obj = growl_pop(vm);
+    size_t mark = growl_gc_mark(vm);
+    growl_gc_root(vm, &obj);
+
+    GrowlTuple *tuple = growl_unwrap_tuple(vm, obj);
+    if (tuple == NULL)
+      growl_vm_error(vm, "tuple/clone: can't clone non-tuple");
+    Growl new = growl_make_tuple(vm, tuple->count);
+    GrowlTuple *new_tuple = growl_unwrap_tuple(vm, new);
+    tuple = growl_unwrap_tuple(vm, obj);
+    for (size_t i = 0; i < tuple->count; i++) {
+      new_tuple->data[i] = tuple->data[i];
+    }
+    growl_push(vm, new);
+    growl_gc_reset(vm, mark);
+    VM_NEXT();
+  }
+
+  VM_OP(TUPLE_LENGTH) {
+    Growl obj = growl_pop(vm);
+    GrowlTuple *tuple = growl_unwrap_tuple(vm, obj);
+    if (tuple == NULL)
+      growl_vm_error(vm, "tuple/length: can't get length of non-tuple");
+    growl_push(vm, growl_from_double(tuple->count));
+    VM_NEXT();
+  }
 
   VM_DEFAULT() { growl_vm_error(vm, "unknown opcode %d", opcode); }
   VM_END()

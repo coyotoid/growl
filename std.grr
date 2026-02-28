@@ -1,17 +1,41 @@
 def print { file/stdout file/write }
 def println { print "\n" print }
 
+\ * Control flow combinators
 def when { [] if }
 def unless { swap when }
 
+\ * Stack shuffling
+def 3dup { dig dup >r bury 2dup r> bury }
+
+\ * Dataflow combinators
 def 2dip { swap [dip] dip }
+def 3dip { swap [2dip] dip }
+def 4dip { swap [3dip] dip }
 
 def keep { over [call] dip }
 def 2keep { [2dup] dip 2dip }
+def 3keep { [3dup] dip 3dip }
 
 def bi { [keep] dip call }
-def tri { [[keep] dip keep] dip call }
+def 2bi { [2keep] dip call }
 
+def tri { [[keep] dip keep] dip call }
+def 2tri { [[2keep] dip 2keep] dip call }
+
+def bi* { [dip] dip call }
+def 2bi* { [2dip] dip call }
+
+def tri* { [[2dip] dip dip] dip call }
+def 2tri* { [4dip] 2dip 2bi* }
+
+def bi@ { dup bi* }
+def 2bi@ { dup 2bi* }
+
+def tri@ { dup dup tri* }
+def 2tri@ { dup dup 2tri* }
+
+\ * Looping combinators
 def times {
   if: over 0 =
     [drop drop]
@@ -24,3 +48,27 @@ def while {
     [r> dup >r call r> r> swap while]
     [drop r> drop r> drop];
 }
+
+\ * List functions
+def list/each {
+  if: over nil =
+    [ drop drop ]
+    [ 2dup >r >r
+      [ head ] dip call
+      r> tail r>
+      list/each ];
+}
+
+def list/map-aux {
+  if: over nil =
+    [ drop drop ]
+    [ 2dup >r >r
+      [ head ] dip call
+      swap cons
+      r> tail r>
+      list/map-aux ];
+}
+
+def list/reverse { nil swap [swap cons] list/each }
+
+def list/map { nil bury list/map-aux list/reverse }

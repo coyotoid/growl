@@ -1,0 +1,4 @@
+load "../std.grr"
+
+while: [file/stdin file/getc]
+  [file/stdout file/putc];

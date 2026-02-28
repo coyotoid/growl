@@ -1,3 +1,5 @@
+/* Lifeworld. */
+
 #include <growl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -7,6 +9,7 @@
 #include "dynarray.h"
 #include "opcodes.h"
 #include "sleb128.h"
+#include "path.h"
 
 #include <libgen.h>
 #include <limits.h>
@@ -18,14 +21,14 @@ typedef struct {
   Growl *data;
   size_t count;
   size_t capacity;
-} ConstantTable;
+} ObjectList;
 
 typedef struct {
   uint8_t *data;
   size_t count;
   size_t capacity;
 
-  ConstantTable constants;
+  ObjectList constants;
 } Chunk;
 
 typedef struct {
@@ -35,43 +38,52 @@ typedef struct {
 
 // clang-format off
 Primitive primitives[] = {
-  {"nil",     {GOP_PUSH_NIL, 0}},
-  {"drop",    {GOP_DROP, 0}},
-  {"dup",     {GOP_DUP, 0}},
-  {"swap",    {GOP_SWAP, 0}},
-  {"2drop",   {GOP_2DROP, 0}},
-  {"2dup",    {GOP_2DUP, 0}},
-  {"2swap",   {GOP_2SWAP, 0}},
-  {"nip",     {GOP_NIP, 0}},
-  {"over",    {GOP_OVER, 0}},
-  {"bury",    {GOP_BURY, 0}},
-  {"dig",     {GOP_DIG, 0}},
-  {">r",      {GOP_TO_RETAIN, 0}},
-  {"r>",      {GOP_FROM_RETAIN, 0}},
-  {"?",       {GOP_CHOOSE, 0}},
-  {"if",      {GOP_CHOOSE, GOP_CALL, 0}},
-  {"call",    {GOP_CALL, 0}},
-  {"compose", {GOP_COMPOSE, 0}},
-  {"curry",   {GOP_CURRY, 0}},
-  {"dip",     {GOP_DIP, 0}},
-  {".",       {GOP_PPRINT, 0}},
-  {"+",       {GOP_ADD, 0}},
-  {"*",       {GOP_MUL, 0}},
-  {"-",       {GOP_SUB, 0}},
-  {"/",       {GOP_DIV, 0}},
-  {"%",       {GOP_MOD, 0}},
-  {"and",     {GOP_AND, 0}},
-  {"or",      {GOP_OR, 0}},
-  {"=",       {GOP_EQ, 0}},
-  {"!=",      {GOP_NEQ, 0}},
-  {"<",       {GOP_LT, 0}},
-  {"<=",      {GOP_LTE, 0}},
-  {">",       {GOP_GT, 0}},
-  {">=",      {GOP_GTE, 0}},
-  {"&",       {GOP_BAND, 0}},
-  {"|",       {GOP_BOR, 0}},
-  {"^",       {GOP_BXOR, 0}},
-  {"~",       {GOP_BNOT, 0}},
+  {"nil",          {GOP_PUSH_NIL, 0}},
+  {"drop",         {GOP_DROP, 0}},
+  {"dup",          {GOP_DUP, 0}},
+  {"swap",         {GOP_SWAP, 0}},
+  {"2drop",        {GOP_2DROP, 0}},
+  {"2dup",         {GOP_2DUP, 0}},
+  {"2swap",        {GOP_2SWAP, 0}},
+  {"nip",          {GOP_NIP, 0}},
+  {"over",         {GOP_OVER, 0}},
+  {"bury",         {GOP_BURY, 0}},
+  {"dig",          {GOP_DIG, 0}},
+  {">r",           {GOP_TO_RETAIN, 0}},
+  {"r>",           {GOP_FROM_RETAIN, 0}},
+  {"?",            {GOP_CHOOSE, 0}},
+  {"if",           {GOP_CHOOSE, GOP_CALL, 0}},
+  {"call",         {GOP_CALL, 0}},
+  {"compose",      {GOP_COMPOSE, 0}},
+  {"curry",        {GOP_CURRY, 0}},
+  {"dip",          {GOP_DIP, 0}},
+  {".",            {GOP_PPRINT, 0}},
+  {"+",            {GOP_ADD, 0}},
+  {"*",            {GOP_MUL, 0}},
+  {"-",            {GOP_SUB, 0}},
+  {"/",            {GOP_DIV, 0}},
+  {"%",            {GOP_MOD, 0}},
+  {"and",          {GOP_AND, 0}},
+  {"or",           {GOP_OR, 0}},
+  {"=",            {GOP_EQ, 0}},
+  {"!=",           {GOP_NEQ, 0}},
+  {"<",            {GOP_LT, 0}},
+  {"<=",           {GOP_LTE, 0}},
+  {">",            {GOP_GT, 0}},
+  {">=",           {GOP_GTE, 0}},
+  {"&",            {GOP_BAND, 0}},
+  {"|",            {GOP_BOR, 0}},
+  {"^",            {GOP_BXOR, 0}},
+  {"~",            {GOP_BNOT, 0}},
+  {"cons",         {GOP_LIST_CONS, 0}},
+  {"head",         {GOP_LIST_HEAD, 0}},
+  {"tail",         {GOP_LIST_TAIL, 0}},
+  {"list/length",  {GOP_LIST_LENGTH, 0}},
+  {"list->tuple",  {GOP_LIST_TO_TUPLE}},
+  {"tuple/get",    {GOP_TUPLE_GET}},
+  {"tuple/set",    {GOP_TUPLE_SET}},
+  {"tuple/clone",  {GOP_TUPLE_CLONE}},
+  {"tuple/length", {GOP_TUPLE_LENGTH}},
   {NULL,      {0}}
 };
 // clang-format on
@@ -260,31 +272,6 @@ static int compile_call(GrowlCompileContext *ctx, Chunk *chunk,
   return 0;
 }
 
-static char *resolve_module_path(GrowlCompileContext *ctx, const char *path) {
-  char buf[PATH_MAX];
-
-  // relative to current file
-  if (ctx->file_dir && path[0] != '/') {
-    snprintf(buf, sizeof(buf), "%s/%s", ctx->file_dir, path);
-    char *resolved = realpath(buf, NULL);
-    if (resolved && access(resolved, R_OK) == 0)
-      return resolved;
-    free(resolved);
-  }
-
-  // TODO: search paths
-
-  // absolute path
-  if (path[0] == '/') {
-    char *resolved = realpath(path, NULL);
-    if (resolved && access(resolved, R_OK) == 0)
-      return resolved;
-    free(resolved);
-  }
-
-  return NULL;
-}
-
 static int compile_load(GrowlCompileContext *ctx) {
   growl_lexer_next(ctx->lexer);
 
@@ -294,7 +281,7 @@ static int compile_load(GrowlCompileContext *ctx) {
   }
 
   const char *path = ctx->lexer->buffer;
-  char *resolved = resolve_module_path(ctx, path);
+  char *resolved = growl_resolve_module_path(ctx, path, &ctx->vm->scratch);
   if (!resolved) {
     compile_error(ctx, "cannot find module '%s'", path);
     return 1;
@@ -310,7 +297,7 @@ static int compile_load(GrowlCompileContext *ctx) {
   GrowlLexer mod_lexer = {0};
   mod_lexer.file = file;
 
-  char *dir = dirname(strdup(resolved));
+  char *dir = growl_dirname(path, &ctx->vm->scratch);
 
   // I'd like to understand why clang-format does 4 spaces for aggregate
   // initialization.
@@ -333,8 +320,6 @@ static int compile_load(GrowlCompileContext *ctx) {
     result = 1;
 
   fclose(file);
-  free(resolved);
-  free(dir);
   growl_lexer_next(ctx->lexer);
 
   return result;
@@ -346,9 +331,8 @@ static int compile_command(GrowlCompileContext *ctx, Chunk *chunk) {
   growl_lexer_next(ctx->lexer);
   while (ctx->lexer->kind != GTOK_SEMICOLON && ctx->lexer->kind != GTOK_EOF &&
          ctx->lexer->kind != GTOK_INVALID) {
-    if (compile_token(ctx, chunk)) {
+    if (compile_token(ctx, chunk))
       return 1;
-    }
   }
   if (ctx->lexer->kind != GTOK_SEMICOLON) {
     compile_error(ctx, "expected ';' to close command '%s:'", name);
@@ -361,21 +345,13 @@ static int compile_word(GrowlCompileContext *ctx, Chunk *chunk) {
   char *name = ctx->lexer->buffer;
   size_t len = strlen(name);
 
-  if (strcmp(name, "load") == 0) {
+  if (strcmp(name, "load") == 0)
     return compile_load(ctx);
-  }
-
-  // Compile a definition
-  if (strcmp(name, "def") == 0) {
+  if (strcmp(name, "def") == 0)
     return compile_def(ctx);
-  }
-
-  // Compile a command: word: args... ;
-  if (len > 1 && name[len - 1] == ':') {
+  if (len > 1 && name[len - 1] == ':')
     return compile_command(ctx, chunk);
-  }
 
-  // Compile a number value
   double value;
   if (is_number(name, &value)) {
     size_t idx = add_constant(ctx->vm, chunk, growl_from_double(value));
@@ -388,6 +364,117 @@ static int compile_word(GrowlCompileContext *ctx, Chunk *chunk) {
   return compile_call(ctx, chunk, name);
 }
 
+static int compile_literal_value(GrowlCompileContext *ctx, Growl *out);
+
+static int parse_list_value(GrowlCompileContext *ctx, Growl *out) {
+  growl_lexer_next(ctx->lexer); // skip '('
+
+  ObjectList elems = {0};
+  while (ctx->lexer->kind != GTOK_RPAREN && ctx->lexer->kind != GTOK_EOF &&
+         ctx->lexer->kind != GTOK_INVALID) {
+    Growl *next = growl_dynarray_push(&elems, &ctx->vm->scratch);
+    if (compile_literal_value(ctx, next))
+      return 1;
+  }
+
+  if (ctx->lexer->kind != GTOK_RPAREN) {
+    compile_error(ctx, "expected ')' to close list literal");
+    return 1;
+  }
+
+  Growl lst = GROWL_NIL;
+  for (size_t i = elems.count; i > 0; i--)
+    lst = growl_cons_tenured(ctx->vm, elems.data[i - 1], lst);
+
+  *out = lst;
+  growl_lexer_next(ctx->lexer); // skip ')'
+  return 0;
+}
+
+static int parse_tuple_value(GrowlCompileContext *ctx, Growl *out) {
+  growl_lexer_next(ctx->lexer); // skip '#'
+  if (ctx->lexer->kind != GTOK_LPAREN) {
+    compile_error(ctx, "expected '(' after '#'");
+    return 1;
+  }
+  growl_lexer_next(ctx->lexer); // skip '('
+
+  ObjectList elems = {0};
+  while (ctx->lexer->kind != GTOK_RPAREN && ctx->lexer->kind != GTOK_EOF &&
+         ctx->lexer->kind != GTOK_INVALID) {
+    Growl *next = growl_dynarray_push(&elems, &ctx->vm->scratch);
+    if (compile_literal_value(ctx, next))
+      return 1;
+  }
+
+  if (ctx->lexer->kind != GTOK_RPAREN) {
+    compile_error(ctx, "expected ')' to close list literal");
+    return 1;
+  }
+
+  Growl obj = growl_make_tuple_tenured(ctx->vm, elems.count);
+  GrowlTuple *tup = growl_unwrap_tuple(ctx->vm, obj);
+
+  for (size_t i = 0; i < elems.count; i++)
+    tup->data[i] = elems.data[i];
+
+  *out = obj;
+  growl_lexer_next(ctx->lexer);
+  return 0;
+}
+
+static int compile_literal_value(GrowlCompileContext *ctx, Growl *out) {
+  switch (ctx->lexer->kind) {
+  case GTOK_WORD: {
+    double val;
+    if (is_number(ctx->lexer->buffer, &val)) {
+      *out = growl_from_double(val);
+      growl_lexer_next(ctx->lexer);
+      return 0;
+    }
+    if (strcmp(ctx->lexer->buffer, "nil") == 0) {
+      *out = GROWL_NIL;
+      growl_lexer_next(ctx->lexer);
+      return 0;
+    }
+    compile_error(ctx, "expected literal value, got word '%s'",
+                  ctx->lexer->buffer);
+    return 1;
+  }
+  case GTOK_STRING:
+    *out = growl_wrap_string_tenured(ctx->vm, ctx->lexer->buffer);
+    growl_lexer_next(ctx->lexer);
+    return 0;
+  case GTOK_LPAREN:
+    return parse_list_value(ctx, out);
+  case GTOK_HASH:
+    return parse_tuple_value(ctx, out);
+  default:
+    compile_error(ctx, "expected literal value");
+    return 1;
+  }
+}
+
+static int compile_list_literal(GrowlCompileContext *ctx, Chunk *chunk) {
+  Growl lst;
+  if (parse_list_value(ctx, &lst))
+    return 1;
+  size_t idx = add_constant(ctx->vm, chunk, lst);
+  emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(ctx->vm, chunk, (intptr_t)idx);
+  return 0;
+}
+
+static int compile_tuple_literal(GrowlCompileContext *ctx, Chunk *chunk) {
+  Growl tup;
+  if (parse_tuple_value(ctx, &tup))
+    return 1;
+  size_t idx = add_constant(ctx->vm, chunk, tup);
+  emit_byte(ctx->vm, chunk, GOP_PUSH_CONSTANT);
+  emit_sleb128(ctx->vm, chunk, (intptr_t)idx);
+  return 0;
+}
+
 static int compile_token(GrowlCompileContext *ctx, Chunk *chunk) {
   switch (ctx->lexer->kind) {
   case GTOK_WORD:
@@ -396,6 +483,10 @@ static int compile_token(GrowlCompileContext *ctx, Chunk *chunk) {
     return compile_string(ctx, chunk);
   case GTOK_LBRACKET:
     return compile_quotation(ctx, chunk);
+  case GTOK_LPAREN:
+    return compile_list_literal(ctx, chunk);
+  case GTOK_HASH:
+    return compile_tuple_literal(ctx, chunk);
   case GTOK_SEMICOLON:
   case GTOK_RPAREN:
   case GTOK_RBRACKET:

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GC_DEBUG 1
+#define GC_DEBUG 0
 #define ALIGN(n) (((n) + 7) & ~7)
 
 static Growl copy(GrowlVM *vm, GrowlObjectHeader *hdr) {
@@ -147,11 +147,6 @@ void growl_gc_collect(GrowlVM *vm) {
   for (size_t i = 0; i < vm->root_count; ++i) {
     *vm->roots[i] = forward(vm, *vm->roots[i]);
   }
-
-  // // Forward word definitions
-  // for (size_t i = 0; i < vm->defs.count; ++i) {
-  //   vm->defs.data[i].callable = forward(vm, vm->defs.data[i].callable);
-  // }
 
   uint8_t *tenured_scan = vm->tenured.start;
   while (tenured_scan < vm->tenured.free) {

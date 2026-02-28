@@ -28,8 +28,7 @@ typedef uint64_t Growl;
 #define GROWL_IS_NIL(x) ((x) == GROWL_NIL)
 #define GROWL_IS_NUM(x) (((x) & GROWL_QNAN) != GROWL_QNAN)
 #define GROWL_IS_PTR(x)                                                        \
-  (((x) & UINT64_C(0xFFFF000000000000)) ==                                    \
-   (GROWL_QNAN | (UINT64_C(2) << 48)))
+  (((x) & UINT64_C(0xFFFF000000000000)) == (GROWL_QNAN | (UINT64_C(2) << 48)))
 
 /* Double encoding via memcpy (type-punning safe) */
 static inline Growl growl_from_double(double d) {
@@ -48,7 +47,7 @@ static inline double growl_to_double(Growl v) {
 
 /* Pointer construction/extraction */
 #define GROWL_MKPTR(arena, offset)                                             \
-  (GROWL_QNAN | (UINT64_C(2) << 48) | ((uint64_t)(arena) << 46) |            \
+  (GROWL_QNAN | (UINT64_C(2) << 48) | ((uint64_t)(arena) << 46) |              \
    ((uint64_t)(offset) & UINT64_C(0x3FFFFFFFFFFF)))
 #define GROWL_PTR_ARENA(x) (((x) >> 46) & UINT64_C(3))
 #define GROWL_PTR_OFFSET(x) ((x) & UINT64_C(0x3FFFFFFFFFFF))
@@ -116,14 +115,24 @@ struct GrowlList {
   Growl head, tail;
 };
 
+Growl growl_cons(GrowlVM *vm, Growl head, Growl tail);
+Growl growl_cons_tenured(GrowlVM *vm, Growl head, Growl tail);
+size_t growl_list_length(GrowlVM *vm, Growl lst);
+Growl growl_list_to_tuple(GrowlVM *vm, Growl lst);
+GrowlList *growl_unwrap_list(GrowlVM *vm, Growl obj);
+
 struct GrowlTuple {
   size_t count;
   Growl data[];
 };
 
+Growl growl_make_tuple(GrowlVM *vm, size_t count);
+Growl growl_make_tuple_tenured(GrowlVM *vm, size_t count);
 GrowlTuple *growl_unwrap_tuple(GrowlVM *vm, Growl obj);
 
-struct GrowlTable {};
+struct GrowlTable {
+  // TODO: tables
+};
 
 GrowlTable *growl_unwrap_table(GrowlVM *vm, Growl obj);
 
@@ -180,6 +189,7 @@ enum {
   GTOK_RBRACKET = ']',
   GTOK_LBRACE = '{',
   GTOK_RBRACE = '}',
+  GTOK_HASH = '#',
 };
 
 #define GROWL_LEXER_BUFSIZE 256

@@ -24,6 +24,7 @@ growl_sources = [
     'src/core/lexer.c',
     'src/core/list.c',
     'src/core/native.c',
+    'src/core/path.c',
     'src/core/print.c',
     'src/core/sleb128.c',
     'src/core/string.c',

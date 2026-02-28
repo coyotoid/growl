@@ -46,6 +46,17 @@ enum GrowlOpcode {
   GOP_LTE,
   GOP_GT,
   GOP_GTE,
+  /** List operations */
+  GOP_LIST_CONS,
+  GOP_LIST_HEAD,
+  GOP_LIST_TAIL,
+  GOP_LIST_LENGTH,
+  GOP_LIST_TO_TUPLE,
+  /** Tuple operations */
+  GOP_TUPLE_GET,
+  GOP_TUPLE_SET,
+  GOP_TUPLE_CLONE,
+  GOP_TUPLE_LENGTH
 };
 
 #endif // GROWL_OPCODES_H

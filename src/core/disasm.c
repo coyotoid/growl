@@ -96,8 +96,17 @@ static size_t disassemble_instr(GrowlVM *vm, GrowlQuotation *quot,
     OPCODE1(LTE);
     OPCODE1(GT);
     OPCODE1(GTE);
+    OPCODE1(LIST_CONS);
+    OPCODE1(LIST_HEAD);
+    OPCODE1(LIST_TAIL);
+    OPCODE1(LIST_LENGTH);
+    OPCODE1(LIST_TO_TUPLE);
+    OPCODE1(TUPLE_GET);
+    OPCODE1(TUPLE_SET);
+    OPCODE1(TUPLE_CLONE);
+    OPCODE1(TUPLE_LENGTH);
   default:
-    printf("%d\n", opcode);
+    printf("??? (%d)\n", opcode);
     return offset;
   }
 }

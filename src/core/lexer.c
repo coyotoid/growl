@@ -35,7 +35,7 @@ static int getc_ws(GrowlLexer *lx) {
 
 static int is_delimiter(int i) {
   return i == '(' || i == ')' || i == '[' || i == ']' || i == '{' || i == '}' ||
-         i == ';' || i == '\\' || i == '"';
+         i == ';' || i == '\\' || i == '"' || i == '#';
 }
 
 static void append(GrowlLexer *lexer, int ch) {
@@ -143,6 +143,7 @@ int growl_lexer_next(GrowlLexer *lexer) {
   case ']':
   case '{':
   case '}':
+  case '#':
   case ';':
     return lexer->kind = next;
   case '"':
