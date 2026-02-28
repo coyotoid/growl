@@ -377,7 +377,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
       growl_push(vm,                                                           \
                  growl_from_double(growl_to_double(a) op growl_to_double(b))); \
     } else {                                                                   \
-      growl_vm_error(vm, #op ": numeric op on non-numbers");                         \
+      growl_vm_error(vm, #op ": numeric op on non-numbers");                   \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -406,7 +406,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
       int32_t ib = (int32_t)growl_to_double(b);                                \
       growl_push(vm, growl_from_double((double)(ia op ib)));                   \
     } else {                                                                   \
-      growl_vm_error(vm, #op ": numeric op on non-numbers");                         \
+      growl_vm_error(vm, #op ": numeric op on non-numbers");                   \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -478,7 +478,7 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
         growl_push(vm, GROWL_NIL);                                             \
       }                                                                        \
     } else {                                                                   \
-      growl_vm_error(vm, #op ": comparison on non-numbers");                         \
+      growl_vm_error(vm, #op ": comparison on non-numbers");                   \
     }                                                                          \
     VM_NEXT();                                                                 \
   }
@@ -497,33 +497,20 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
 
   VM_OP(LIST_HEAD) {
     Growl value = growl_pop(vm);
-    if (GROWL_IS_NIL(value))
-      growl_vm_error(vm, "head: attempt to get head of nil");
-    if (GROWL_IS_NUM(value))
-      growl_vm_error(vm, "head: attempt to get head of number");
-    GrowlObjectHeader *hdr = growl_unbox(vm, value);
-    if (hdr->type == GROWL_TYPE_LIST) {
-      GrowlList *lst = (GrowlList *)(hdr + 1);
-      growl_push(vm, lst->head);
-    } else {
-      growl_vm_error(vm, "head: attempt to get head of non-list");
-    }
+    GrowlList *lst = growl_unwrap_list(vm, value);
+    if (!lst)
+      growl_vm_error(vm, "head: expected list");
+    growl_push(vm, lst->head);
     VM_NEXT();
   }
 
   VM_OP(LIST_TAIL) {
     Growl value = growl_pop(vm);
-    if (GROWL_IS_NIL(value))
-      growl_vm_error(vm, "tail: attempt to get tail of nil");
-    if (GROWL_IS_NUM(value))
-      growl_vm_error(vm, "tail: attempt to get tail of number");
-    GrowlObjectHeader *hdr = growl_unbox(vm, value);
-    if (hdr->type == GROWL_TYPE_LIST) {
-      GrowlList *lst = (GrowlList *)(hdr + 1);
-      growl_push(vm, lst->tail);
-    } else {
-      growl_vm_error(vm, "tail: attempt to get tail of non-list");
-    }
+    GrowlList *lst = growl_unwrap_list(vm, value);
+    if (!lst)
+      growl_vm_error(vm, "tail: expected list");
+    growl_push(vm, lst->head);
+
     VM_NEXT();
   }
 
@@ -549,10 +536,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     Growl n = growl_pop(vm);
     if (growl_type(vm, n) != GROWL_TYPE_NUMBER)
       growl_vm_error(vm, "tuple/get: expected a number for index");
-    if (growl_type(vm, obj) != GROWL_TYPE_TUPLE)
-      growl_vm_error(vm, "tuple/get: can't index a non-tuple");
     GrowlTuple *tup = growl_unwrap_tuple(vm, obj);
-    assert(tup != NULL);
+    if (!tup)
+      growl_vm_error(vm, "tuple/get: can't index a non-tuple");
     intptr_t index = (intptr_t)(growl_to_double(n));
     if (index < 0 || index >= (intptr_t)tup->count)
       growl_vm_error(vm, "tuple/get: index out of range");
@@ -566,10 +552,9 @@ int growl_vm_execute(GrowlVM *vm, GrowlQuotation *quot) {
     Growl elt = growl_pop(vm);
     if (growl_type(vm, n) != GROWL_TYPE_NUMBER)
       growl_vm_error(vm, "tuple/set: expected a number for index");
-    if (growl_type(vm, obj) != GROWL_TYPE_TUPLE)
-      growl_vm_error(vm, "tuple/set: attempt to index a non-tuple");
     GrowlTuple *tup = growl_unwrap_tuple(vm, obj);
-    assert(tup != NULL);
+    if (!tup)
+      growl_vm_error(vm, "tuple/get: can't index a non-tuple");
     intptr_t index = (intptr_t)(growl_to_double(n));
     if (index < 0 || index >= (intptr_t)tup->count)
       growl_vm_error(vm, "tuple/set: index out of range");

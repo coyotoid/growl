@@ -26,6 +26,15 @@ Growl growl_cons_tenured(GrowlVM *vm, Growl head, Growl tail) {
   return growl_box_tenured(vm, hdr);
 }
 
+GrowlList *growl_unwrap_list(GrowlVM *vm, Growl obj) {
+  if (GROWL_IS_NIL(obj) || GROWL_IS_NUM(obj))
+    return NULL;
+  GrowlObjectHeader *hdr = growl_unbox(vm, obj);
+  if (hdr->type != GROWL_TYPE_LIST)
+    return NULL;
+  return (GrowlList *)(hdr + 1);
+}
+
 size_t growl_list_length(GrowlVM *vm, Growl lst) {
   size_t len = 0;
   while (!GROWL_IS_NIL(lst)) {
